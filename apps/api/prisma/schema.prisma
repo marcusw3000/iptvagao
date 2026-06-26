@@ -40,6 +40,13 @@ enum PaymentStatus {
   refunded
 }
 
+enum WithdrawalStatus {
+  pending
+  approved
+  paid
+  rejected
+}
+
 model Plan {
   id              String   @id @default(cuid())
   name            String
@@ -80,6 +87,7 @@ model Client {
   liveStreams    LiveStream[]
   alerts        Alert[]
 
+  @@index([resellerId])
   @@map("clients")
 }
 
@@ -112,20 +120,23 @@ model ResellerCommission {
   reseller Reseller @relation(fields: [resellerId], references: [id])
   payment  Payment  @relation(fields: [paymentId], references: [id])
 
+  @@index([resellerId])
+  @@index([paymentId])
   @@map("reseller_commissions")
 }
 
 model ResellerWithdrawal {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   resellerId  String
-  amount      Decimal  @db.Decimal(10, 2)
-  status      String   @default("pending")
+  amount      Decimal          @db.Decimal(10, 2)
+  status      WithdrawalStatus @default(pending)
   pixKey      String?
   processedAt DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime         @default(now())
 
   reseller Reseller @relation(fields: [resellerId], references: [id])
 
+  @@index([resellerId])
   @@map("reseller_withdrawals")
 }
 
@@ -145,6 +156,8 @@ model User {
   client   Client?   @relation(fields: [clientId], references: [id])
   reseller Reseller? @relation(fields: [resellerId], references: [id])
 
+  @@index([clientId])
+  @@index([resellerId])
   @@map("users")
 }
 
@@ -162,6 +175,7 @@ model Subscription {
   plan     Plan      @relation(fields: [planId], references: [id])
   payments Payment[]
 
+  @@index([planId])
   @@map("subscriptions")
 }
 
@@ -178,33 +192,38 @@ model Payment {
   subscription Subscription         @relation(fields: [subscriptionId], references: [id])
   commissions  ResellerCommission[]
 
+  @@index([subscriptionId])
   @@map("payments")
 }
 
 model Device {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   clientId       String
   name           String
-  activationCode String   @unique
-  activated      Boolean  @default(false)
+  activationCode String    @unique
+  activated      Boolean   @default(false)
   lastSeenAt     DateTime?
   ipAddress      String?
   userAgent      String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  client Client @relation(fields: [clientId], references: [id])
+  client          Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  activationCodes ActivationCode[]
 
+  @@index([clientId])
   @@map("devices")
 }
 
 model ActivationCode {
-  id        String   @id @default(cuid())
-  code      String   @unique
+  id        String           @id @default(cuid())
+  code      String           @unique
   deviceId  String?
   usedAt    DateTime?
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime         @default(now())
+
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
 
   @@map("activation_codes")
 }
@@ -234,10 +253,12 @@ model Channel {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  client      Client    @relation(fields: [clientId], references: [id])
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   category    Category? @relation(fields: [categoryId], references: [id])
   epgPrograms EpgProgram[]
 
+  @@index([clientId])
+  @@index([categoryId])
   @@map("channels")
 }
 
@@ -250,10 +271,12 @@ model Playlist {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  client   Client          @relation(fields: [clientId], references: [id])
+  client   Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
   category Category?       @relation(fields: [categoryId], references: [id])
   items    PlaylistItem[]
 
+  @@index([clientId])
+  @@index([categoryId])
   @@map("playlists")
 }
 
@@ -269,6 +292,9 @@ model PlaylistItem {
   video    Video?      @relation(fields: [videoId], references: [id])
   stream   LiveStream? @relation(fields: [streamId], references: [id])
 
+  @@index([playlistId])
+  @@index([videoId])
+  @@index([streamId])
   @@map("playlist_items")
 }
 
@@ -284,9 +310,10 @@ model Video {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  client        Client         @relation(fields: [clientId], references: [id])
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   playlistItems PlaylistItem[]
 
+  @@index([clientId])
   @@map("videos")
 }
 
@@ -300,9 +327,10 @@ model LiveStream {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  client        Client         @relation(fields: [clientId], references: [id])
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   playlistItems PlaylistItem[]
 
+  @@index([clientId])
   @@map("live_streams")
 }
 
@@ -317,6 +345,7 @@ model EpgProgram {
 
   channel Channel @relation(fields: [channelId], references: [id])
 
+  @@index([channelId])
   @@map("epg_programs")
 }
 
@@ -331,8 +360,9 @@ model Alert {
   endsAt    DateTime?
   createdAt DateTime @default(now())
 
-  client Client @relation(fields: [clientId], references: [id])
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
+  @@index([clientId])
   @@map("alerts")
 }
 
@@ -344,6 +374,8 @@ model AnalyticsEvent {
   payload   Json?
   createdAt DateTime @default(now())
 
+  @@index([clientId])
+  @@index([deviceId])
   @@map("analytics_events")
 }
 
