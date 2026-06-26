@@ -41,6 +41,20 @@ export class AuthService {
   }
 
   async validateUser(payload: JwtPayload) {
-    return this.prisma.user.findUnique({ where: { id: payload.sub } })
+    return this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        clientId: true,
+        resellerId: true,
+        active: true,
+        lastLoginAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    })
   }
 }

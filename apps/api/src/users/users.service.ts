@@ -73,6 +73,10 @@ export class UsersService {
       }
     }
 
+    if (!username) {
+      throw new Error('Could not generate unique username after 100 attempts')
+    }
+
     const password = String(Math.floor(100000 + Math.random() * 900000))
     return { username, password }
   }
