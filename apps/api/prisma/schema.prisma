@@ -104,7 +104,7 @@ model Reseller {
   clients     Client[]
   commissions ResellerCommission[]
   withdrawals ResellerWithdrawal[]
-  user        User?
+  users       User[]
 
   @@map("resellers")
 }
