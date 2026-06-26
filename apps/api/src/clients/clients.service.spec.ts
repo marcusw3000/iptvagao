@@ -25,6 +25,7 @@ describe('ClientsService', () => {
       update: jest.Mock
       findMany: jest.Mock
       count: jest.Mock
+      delete: jest.Mock
     }
   }
   let usersService: { generateClientCredentials: jest.Mock; create: jest.Mock }
@@ -37,6 +38,7 @@ describe('ClientsService', () => {
         update: jest.fn().mockResolvedValue(mockClient),
         findMany: jest.fn().mockResolvedValue([mockClient]),
         count: jest.fn().mockResolvedValue(1),
+        delete: jest.fn().mockResolvedValue(mockClient),
       },
     }
     usersService = {
@@ -80,10 +82,42 @@ describe('ClientsService', () => {
 
   it('suspend sets active to false', async () => {
     prisma.client.findUnique.mockResolvedValue(mockClient)
+    prisma.client.update.mockResolvedValue(mockClient)
     await service.suspend('client-1')
     expect(prisma.client.update).toHaveBeenCalledWith({
       where: { id: 'client-1' },
       data: { active: false },
+      select: expect.any(Object),
     })
+  })
+
+  it('activate sets active to true', async () => {
+    prisma.client.findUnique.mockResolvedValue(mockClient)
+    await service.activate('client-1')
+    expect(prisma.client.update).toHaveBeenCalledWith({
+      where: { id: 'client-1' },
+      data: { active: true },
+      select: expect.any(Object),
+    })
+  })
+
+  it('activate throws NotFoundException for unknown id', async () => {
+    prisma.client.findUnique.mockResolvedValue(null)
+    await expect(service.activate('bad-id')).rejects.toThrow(NotFoundException)
+  })
+
+  it('findAll returns correct pagination metadata', async () => {
+    const result = await service.findAll({ page: 1, limit: 20 })
+    expect(result.data[0].id).toBe('client-1')
+    expect(result.total).toBe(1)
+    expect(result.page).toBe(1)
+    expect(result.totalPages).toBe(1)
+  })
+
+  it('create calls usersService.create with correct clientId', async () => {
+    await service.create({ name: 'Empresa', email: 'e@test.com' })
+    expect(usersService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: 'client-1' }),
+    )
   })
 })

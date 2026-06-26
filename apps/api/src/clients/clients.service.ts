@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import { UserRole } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { UsersService } from '../users/users.service'
 import { CreateClientDto } from './dto/create-client.dto'
@@ -27,18 +28,24 @@ export class ClientsService {
     const exists = await this.prisma.client.findUnique({ where: { email: dto.email } })
     if (exists) throw new ConflictException('Email já utilizado')
 
+    const credentials = await this.usersService.generateClientCredentials()
+
     const client = await this.prisma.client.create({
       data: dto,
       select: CLIENT_SELECT,
     })
 
-    const credentials = await this.usersService.generateClientCredentials()
-    await this.usersService.create({
-      username: credentials.username,
-      password: credentials.password,
-      role: 'client_admin' as any,
-      clientId: client.id,
-    })
+    try {
+      await this.usersService.create({
+        username: credentials.username,
+        password: credentials.password,
+        role: UserRole.client_admin,
+        clientId: client.id,
+      })
+    } catch (err) {
+      await this.prisma.client.delete({ where: { id: client.id } })
+      throw err
+    }
 
     return { client, credentials }
   }
@@ -70,11 +77,11 @@ export class ClientsService {
 
   async suspend(id: string) {
     await this.findOne(id)
-    return this.prisma.client.update({ where: { id }, data: { active: false } })
+    return this.prisma.client.update({ where: { id }, data: { active: false }, select: CLIENT_SELECT })
   }
 
   async activate(id: string) {
     await this.findOne(id)
-    return this.prisma.client.update({ where: { id }, data: { active: true } })
+    return this.prisma.client.update({ where: { id }, data: { active: true }, select: CLIENT_SELECT })
   }
 }
