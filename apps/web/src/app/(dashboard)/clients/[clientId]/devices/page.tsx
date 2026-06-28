@@ -209,7 +209,7 @@ export default function DevicesPage() {
             <Key className="mx-auto mb-3 text-indigo-400" size={32} />
             <h3 className="text-lg font-bold text-white mb-1">Código de Ativação</h3>
             <p className="text-gray-400 text-sm mb-6">
-              Expira em: {new Date(activationCode.expiresAt).toLocaleTimeString('pt-BR')}
+              Expira em: {new Date(activationCode.expiresAt).toLocaleString('pt-BR')}
             </p>
             <div className="bg-gray-800 rounded-lg p-6 mb-6">
               <p className="text-4xl font-mono font-bold text-indigo-400 tracking-widest">

@@ -34,18 +34,18 @@ export const useAuth = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
-      partialize: (s) => ({ token: s.token, isAuthenticated: s.isAuthenticated }),
+      partialize: (s) => ({ token: s.token }),
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.error('[auth] rehydration failed:', error)
+          useAuth.setState({ _hasHydrated: true })
           return
         }
-        if (state) {
-          if (state.token) {
-            localStorage.setItem('access_token', state.token)
-          }
-          state._hasHydrated = true
+        const isAuthenticated = !!state?.token
+        if (state?.token) {
+          localStorage.setItem('access_token', state.token)
         }
+        useAuth.setState({ _hasHydrated: true, isAuthenticated })
       },
     },
   ),

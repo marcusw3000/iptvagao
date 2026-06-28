@@ -40,7 +40,10 @@ const channelSchema = z.object({
   name: z.string().min(1, 'Obrigatório'),
   url: z.string().min(1, 'Obrigatório'),
   categoryId: z.string().optional(),
-  logoUrl: z.string().optional(),
+  logoUrl: z.string().url('URL inválida').refine(
+    (url) => url.startsWith('https://'),
+    { message: 'Use HTTPS' }
+  ).optional(),
 })
 
 type CategoryForm = z.infer<typeof categorySchema>
