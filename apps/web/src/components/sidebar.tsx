@@ -7,6 +7,7 @@ import {
   CreditCard,
   LayoutDashboard,
   LogOut,
+  UserCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useAuth } from '@/lib/auth'
@@ -15,6 +16,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clients', label: 'Clientes', icon: Users },
   { href: '/plans', label: 'Planos', icon: CreditCard },
+  { href: '/resellers', label: 'Revendedores', icon: UserCheck },
 ]
 
 export function Sidebar() {
