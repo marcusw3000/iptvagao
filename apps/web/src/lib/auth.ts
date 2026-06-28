@@ -4,6 +4,7 @@ import { api } from './api'
 
 interface AuthState {
   token: string | null
+  isAuthenticated: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -12,6 +13,7 @@ export const useAuth = create<AuthState>()(
   persist(
     (set) => ({
       token: null,
+      isAuthenticated: false,
 
       async login(username, password) {
         const { data } = await api.post<{ accessToken: string }>('/auth/login', {
@@ -19,15 +21,23 @@ export const useAuth = create<AuthState>()(
           password,
         })
         localStorage.setItem('access_token', data.accessToken)
-        set({ token: data.accessToken })
+        set({ token: data.accessToken, isAuthenticated: true })
       },
 
       logout() {
         localStorage.removeItem('access_token')
-        set({ token: null })
+        set({ token: null, isAuthenticated: false })
         window.location.href = '/login'
       },
     }),
-    { name: 'auth-storage', partialize: (s) => ({ token: s.token }) },
+    {
+      name: 'auth-storage',
+      partialize: (s) => ({ token: s.token, isAuthenticated: s.isAuthenticated }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.token) {
+          localStorage.setItem('access_token', state.token)
+        }
+      },
+    },
   ),
 )
