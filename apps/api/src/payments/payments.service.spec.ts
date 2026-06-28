@@ -25,33 +25,25 @@ const confirmedPayment = { ...mockPayment, status: PaymentStatus.paid, paidAt: n
 
 describe('PaymentsService', () => {
   let service: PaymentsService
-  let prisma: {
-    payment: {
-      create: jest.Mock
-      findMany: jest.Mock
-      count: jest.Mock
-      findUnique: jest.Mock
-      update: jest.Mock
-    }
-    subscription: {
-      findUnique: jest.Mock
-      update: jest.Mock
-    }
-  }
+  let prisma: any
 
   beforeEach(async () => {
+    const paymentUpdateMock = jest.fn().mockResolvedValue(confirmedPayment)
+    const subscriptionUpdateMock = jest.fn().mockResolvedValue({ ...mockSubscription, status: SubscriptionStatus.active })
+
     prisma = {
       payment: {
         create: jest.fn().mockResolvedValue(mockPayment),
         findMany: jest.fn().mockResolvedValue([mockPayment]),
         count: jest.fn().mockResolvedValue(1),
         findUnique: jest.fn().mockResolvedValue(null),
-        update: jest.fn().mockResolvedValue(confirmedPayment),
+        update: paymentUpdateMock,
       },
       subscription: {
         findUnique: jest.fn().mockResolvedValue(mockSubscription),
-        update: jest.fn().mockResolvedValue({ ...mockSubscription, status: SubscriptionStatus.active }),
+        update: subscriptionUpdateMock,
       },
+      $transaction: jest.fn((queries) => Promise.resolve([confirmedPayment, { ...mockSubscription, status: SubscriptionStatus.active }])),
     }
     const module = await Test.createTestingModule({
       providers: [

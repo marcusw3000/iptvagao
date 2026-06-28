@@ -57,16 +57,17 @@ export class PaymentsService {
     const payment = await this.prisma.payment.findUnique({ where: { id } })
     if (!payment) throw new NotFoundException('Pagamento não encontrado')
 
-    const confirmed = await this.prisma.payment.update({
-      where: { id },
-      data: { status: PaymentStatus.paid, paidAt: new Date() },
-      select: PAYMENT_SELECT,
-    })
-
-    await this.prisma.subscription.update({
-      where: { id: payment.subscriptionId },
-      data: { status: SubscriptionStatus.active },
-    })
+    const [confirmed] = await this.prisma.$transaction([
+      this.prisma.payment.update({
+        where: { id },
+        data: { status: PaymentStatus.paid, paidAt: new Date() },
+        select: PAYMENT_SELECT,
+      }),
+      this.prisma.subscription.update({
+        where: { id: payment.subscriptionId },
+        data: { status: SubscriptionStatus.active },
+      }),
+    ])
 
     return confirmed
   }
