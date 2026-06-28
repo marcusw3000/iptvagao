@@ -130,6 +130,10 @@ describe('ResellersService', () => {
     await expect(service.suspend('bad')).rejects.toThrow(NotFoundException)
   })
 
+  it('activate throws NotFoundException for unknown id', async () => {
+    await expect(service.activate('bad')).rejects.toThrow(NotFoundException)
+  })
+
   it('findCommissions returns paginated commissions', async () => {
     prisma.reseller.findUnique.mockResolvedValue(mockReseller)
     const result = await service.findCommissions('res-1', { page: 1, limit: 20 })
