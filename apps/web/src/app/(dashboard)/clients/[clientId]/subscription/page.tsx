@@ -258,6 +258,9 @@ export default function SubscriptionPage() {
         <Link href={`/clients/${clientId}/devices`} className="text-gray-400 hover:text-white transition-colors">
           <ArrowLeft size={20} />
         </Link>
+        <Link href={`/clients/${clientId}/devices`} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">Dispositivos</Link>
+        <Link href={`/clients/${clientId}/channels`} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">Canais</Link>
+        <Link href={`/clients/${clientId}/credentials`} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">Credenciais</Link>
         <h2 className="text-2xl font-bold text-white">Assinatura</h2>
       </div>
 
