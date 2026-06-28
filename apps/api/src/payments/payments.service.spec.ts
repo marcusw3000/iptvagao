@@ -19,6 +19,10 @@ const mockPayment = {
   reference: null,
   paidAt: null,
   createdAt: new Date(),
+  // nested include shape — resellerId null means no commission
+  subscription: {
+    client: { resellerId: null },
+  },
 }
 
 const confirmedPayment = { ...mockPayment, status: PaymentStatus.paid, paidAt: new Date() }
@@ -42,6 +46,12 @@ describe('PaymentsService', () => {
       subscription: {
         findUnique: jest.fn().mockResolvedValue(mockSubscription),
         update: subscriptionUpdateMock,
+      },
+      reseller: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      resellerCommission: {
+        create: jest.fn().mockResolvedValue({}),
       },
       $transaction: jest.fn((queries) => Promise.resolve([confirmedPayment, { ...mockSubscription, status: SubscriptionStatus.active }])),
     }
@@ -105,5 +115,35 @@ describe('PaymentsService', () => {
 
   it('confirm throws NotFoundException if payment not found', async () => {
     await expect(service.confirm('bad')).rejects.toThrow(NotFoundException)
+  })
+
+  it('confirm does NOT create commission when resellerId is null', async () => {
+    // mockPayment already has resellerId: null
+    prisma.payment.findUnique.mockResolvedValue(mockPayment)
+    await service.confirm('pay-1')
+    expect(prisma.resellerCommission.create).not.toHaveBeenCalled()
+  })
+
+  it('confirm creates commission when client has resellerId', async () => {
+    const paymentWithReseller = {
+      ...mockPayment,
+      subscription: { client: { resellerId: 'res-1' } },
+    }
+    prisma.payment.findUnique.mockResolvedValue(paymentWithReseller)
+    prisma.reseller.findUnique.mockResolvedValue({
+      id: 'res-1',
+      commissionPct: '10.00',
+    })
+
+    await service.confirm('pay-1')
+
+    expect(prisma.resellerCommission.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resellerId: 'res-1',
+          paymentId: 'pay-1',
+        }),
+      }),
+    )
   })
 })

@@ -54,7 +54,16 @@ export class PaymentsService {
   }
 
   async confirm(id: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id } })
+    const payment = await this.prisma.payment.findUnique({
+      where: { id },
+      include: {
+        subscription: {
+          include: {
+            client: { select: { resellerId: true } },
+          },
+        },
+      },
+    })
     if (!payment) throw new NotFoundException('Pagamento não encontrado')
 
     const [confirmed] = await this.prisma.$transaction([
@@ -68,6 +77,24 @@ export class PaymentsService {
         data: { status: SubscriptionStatus.active },
       }),
     ])
+
+    const resellerId = payment.subscription?.client?.resellerId ?? null
+    if (resellerId) {
+      const reseller = await this.prisma.reseller.findUnique({
+        where: { id: resellerId },
+      })
+      if (reseller) {
+        await this.prisma.resellerCommission.create({
+          data: {
+            resellerId: reseller.id,
+            paymentId: id,
+            amount: String(
+              (Number(payment.amount) * Number(reseller.commissionPct)) / 100,
+            ),
+          },
+        })
+      }
+    }
 
     return confirmed
   }
