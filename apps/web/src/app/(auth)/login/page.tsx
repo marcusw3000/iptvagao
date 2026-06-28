@@ -32,7 +32,13 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(data.username, data.password)
-      router.push('/dashboard')
+      // role is now populated synchronously by the store after await
+      const { role: currentRole } = useAuth.getState()
+      if (currentRole === 'client_admin' || currentRole === 'client_user') {
+        router.push('/portal')
+      } else {
+        router.push('/dashboard')
+      }
     } catch {
       toast.error('Credenciais inválidas')
     } finally {
