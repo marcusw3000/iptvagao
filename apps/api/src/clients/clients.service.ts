@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { UserRole } from '@prisma/client'
+import * as bcrypt from 'bcrypt'
 import { PrismaService } from '../prisma/prisma.service'
 import { UsersService } from '../users/users.service'
 import { CreateClientDto } from './dto/create-client.dto'
@@ -83,5 +84,34 @@ export class ClientsService {
   async activate(id: string) {
     await this.findOne(id)
     return this.prisma.client.update({ where: { id }, data: { active: true }, select: CLIENT_SELECT })
+  }
+
+  async getCredentials(clientId: string): Promise<{ username: string }> {
+    await this.findOne(clientId)
+    const user = await this.prisma.user.findFirst({
+      where: { clientId, role: 'client_admin' },
+      select: { username: true },
+    })
+    if (!user) throw new NotFoundException('Credenciais não encontradas')
+    return { username: user.username }
+  }
+
+  async resetCredentials(clientId: string): Promise<{ username: string; password: string }> {
+    await this.findOne(clientId)
+    const user = await this.prisma.user.findFirst({
+      where: { clientId, role: 'client_admin' },
+      select: { id: true },
+    })
+    if (!user) throw new NotFoundException('Usuário do cliente não encontrado')
+
+    const credentials = await this.usersService.generateClientCredentials()
+    const hashedPassword = await bcrypt.hash(credentials.password, 10)
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { username: credentials.username, password: hashedPassword },
+    })
+
+    return credentials
   }
 }

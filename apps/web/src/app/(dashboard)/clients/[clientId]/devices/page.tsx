@@ -105,6 +105,12 @@ export default function DevicesPage() {
         >
           Assinatura
         </Link>
+        <Link
+          href={`/clients/${clientId}/credentials`}
+          className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
+        >
+          Credenciais
+        </Link>
         <h2 className="text-2xl font-bold text-white">Dispositivos</h2>
         <button
           onClick={() => setShowCreate(true)}

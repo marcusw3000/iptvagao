@@ -27,6 +27,10 @@ describe('ClientsService', () => {
       count: jest.Mock
       delete: jest.Mock
     }
+    user: {
+      findFirst: jest.Mock
+      update: jest.Mock
+    }
   }
   let usersService: { generateClientCredentials: jest.Mock; create: jest.Mock }
 
@@ -39,6 +43,10 @@ describe('ClientsService', () => {
         findMany: jest.fn().mockResolvedValue([mockClient]),
         count: jest.fn().mockResolvedValue(1),
         delete: jest.fn().mockResolvedValue(mockClient),
+      },
+      user: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
       },
     }
     usersService = {
@@ -119,5 +127,61 @@ describe('ClientsService', () => {
     expect(usersService.create).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: 'client-1' }),
     )
+  })
+
+  // ── credentials ────────────────────────────────────────────────────────────────
+
+  describe('getCredentials', () => {
+    it('returns username of linked client_admin user', async () => {
+      prisma.client.findUnique.mockResolvedValue(mockClient)
+      prisma.user.findFirst.mockResolvedValue({ username: 'abcd' })
+      const result = await service.getCredentials('client-1')
+      expect(result).toEqual({ username: 'abcd' })
+    })
+
+    it('throws NotFoundException when client not found', async () => {
+      prisma.client.findUnique.mockResolvedValue(null)
+      await expect(service.getCredentials('bad')).rejects.toThrow(NotFoundException)
+    })
+
+    it('throws NotFoundException when no linked user', async () => {
+      prisma.client.findUnique.mockResolvedValue(mockClient)
+      prisma.user.findFirst.mockResolvedValue(null)
+      await expect(service.getCredentials('client-1')).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  describe('resetCredentials', () => {
+    it('updates user and returns new plain-text credentials', async () => {
+      prisma.client.findUnique.mockResolvedValue(mockClient)
+      prisma.user.findFirst.mockResolvedValue({ id: 'user-1', username: 'abcd' })
+      prisma.user.update.mockResolvedValue({ username: 'abcd' })
+
+      const result = await service.resetCredentials('client-1')
+      expect(result).toHaveProperty('username')
+      expect(result).toHaveProperty('password')
+      expect(result.username).toHaveLength(4)
+      expect(result.password).toMatch(/^\d{6}$/)
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-1' },
+          data: expect.objectContaining({
+            username: expect.any(String),
+            password: expect.stringMatching(/^\$2[ab]\$/),
+          }),
+        }),
+      )
+    })
+
+    it('throws NotFoundException when client not found', async () => {
+      prisma.client.findUnique.mockResolvedValue(null)
+      await expect(service.resetCredentials('bad')).rejects.toThrow(NotFoundException)
+    })
+
+    it('throws NotFoundException when no linked user', async () => {
+      prisma.client.findUnique.mockResolvedValue(mockClient)
+      prisma.user.findFirst.mockResolvedValue(null)
+      await expect(service.resetCredentials('client-1')).rejects.toThrow(NotFoundException)
+    })
   })
 })

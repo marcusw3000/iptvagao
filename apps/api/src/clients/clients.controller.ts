@@ -39,4 +39,14 @@ export class ClientsController {
   activate(@Param('id') id: string) {
     return this.clientsService.activate(id)
   }
+
+  @Get(':id/credentials')
+  getCredentials(@Param('id') id: string) {
+    return this.clientsService.getCredentials(id)
+  }
+
+  @Post(':id/reset-credentials')
+  resetCredentials(@Param('id') id: string) {
+    return this.clientsService.resetCredentials(id)
+  }
 }
