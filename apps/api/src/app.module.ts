@@ -9,6 +9,8 @@ import { PlansModule } from './plans/plans.module'
 import { DevicesModule } from './devices/devices.module'
 import { CategoriesModule } from './categories/categories.module'
 import { ChannelsModule } from './channels/channels.module'
+import { SubscriptionsModule } from './subscriptions/subscriptions.module'
+import { PaymentsModule } from './payments/payments.module'
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { ChannelsModule } from './channels/channels.module'
     DevicesModule,
     CategoriesModule,
     ChannelsModule,
+    SubscriptionsModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}
