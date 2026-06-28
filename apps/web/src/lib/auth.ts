@@ -5,6 +5,7 @@ import { api } from './api'
 interface AuthState {
   token: string | null
   isAuthenticated: boolean
+  _hasHydrated: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -14,6 +15,7 @@ export const useAuth = create<AuthState>()(
     (set) => ({
       token: null,
       isAuthenticated: false,
+      _hasHydrated: false,
 
       async login(username, password) {
         const { data } = await api.post<{ accessToken: string }>('/auth/login', {
@@ -33,9 +35,16 @@ export const useAuth = create<AuthState>()(
     {
       name: 'auth-storage',
       partialize: (s) => ({ token: s.token, isAuthenticated: s.isAuthenticated }),
-      onRehydrateStorage: () => (state) => {
-        if (state?.token) {
-          localStorage.setItem('access_token', state.token)
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.error('[auth] rehydration failed:', error)
+          return
+        }
+        if (state) {
+          if (state.token) {
+            localStorage.setItem('access_token', state.token)
+          }
+          state._hasHydrated = true
         }
       },
     },
