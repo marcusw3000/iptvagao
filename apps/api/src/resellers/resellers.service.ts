@@ -121,8 +121,8 @@ export class ResellersService {
     return {
       ...reseller,
       clientCount,
-      totalCommissions: commissionsAgg._sum.amount ?? '0',
-      pendingWithdrawalAmount: withdrawalsAgg._sum.amount ?? '0',
+      totalCommissions: commissionsAgg._sum.amount?.toString() ?? '0',
+      pendingWithdrawalAmount: withdrawalsAgg._sum.amount?.toString() ?? '0',
     }
   }
 
@@ -210,7 +210,7 @@ export class ResellersService {
     await this.assertWithdrawal(resellerId, withdrawalId)
     return this.prisma.resellerWithdrawal.update({
       where: { id: withdrawalId },
-      data: { status: WithdrawalStatus.rejected },
+      data: { status: WithdrawalStatus.rejected, processedAt: new Date() },
       select: WITHDRAWAL_SELECT,
     })
   }
