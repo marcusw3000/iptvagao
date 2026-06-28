@@ -13,6 +13,7 @@ export interface JwtPayload {
   username: string
   role: string
   clientId: string | null
+  resellerId: string | null
   iat: number
   exp: number
 }

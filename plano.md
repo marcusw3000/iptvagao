@@ -10,7 +10,7 @@ transmissões ao vivo, playlists e canais) para exibição em Smart TVs.
 pirata. Toda a plataforma será destinada a conteúdo próprio, autorizado
 ou licenciado.
 
-------------------------------------------------------------------------
+----------------------      yyy--------------------------------------------------
 
 # 1. Painel Admin Master
 

@@ -1,6 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateDeviceDto } from './dto/create-device.dto'
+
+const CONCURRENT_LIMITS: Record<string, number> = { basic: 1, premium: 4 }
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000
 
 const DEVICE_SELECT = {
   id: true,
@@ -60,6 +63,78 @@ export class DevicesService {
       data: { code, deviceId, expiresAt },
     })
     return { code: ac.code, expiresAt: ac.expiresAt }
+  }
+
+  async heartbeat(deviceId: string, ipAddress?: string) {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } })
+    if (!device) throw new NotFoundException('Dispositivo não encontrado')
+    if (!device.activated) throw new ForbiddenException('Dispositivo não ativado')
+
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { clientId: device.clientId },
+      select: { plan: { select: { type: true } } },
+    })
+
+    if (subscription) {
+      const limit = CONCURRENT_LIMITS[subscription.plan.type] ?? 1
+      const onlineThreshold = new Date(Date.now() - ONLINE_THRESHOLD_MS)
+      const onlineCount = await this.prisma.device.count({
+        where: {
+          clientId: device.clientId,
+          activated: true,
+          lastSeenAt: { gte: onlineThreshold },
+          id: { not: deviceId },
+        },
+      })
+      if (onlineCount >= limit) {
+        throw new ForbiddenException(`Limite de ${limit} TV(s) simultânea(s) atingido`)
+      }
+    }
+
+    return this.prisma.device.update({
+      where: { id: deviceId },
+      data: { lastSeenAt: new Date(), ipAddress: ipAddress ?? null },
+      select: DEVICE_SELECT,
+    })
+  }
+
+  async findAllForMonitoring({ page = 1, limit = 50 }: { page: number; limit: number }) {
+    const onlineThreshold = new Date(Date.now() - ONLINE_THRESHOLD_MS)
+    const skip = (page - 1) * limit
+    const [devices, total] = await Promise.all([
+      this.prisma.device.findMany({
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          clientId: true,
+          name: true,
+          activationCode: true,
+          activated: true,
+          lastSeenAt: true,
+          ipAddress: true,
+          createdAt: true,
+          updatedAt: true,
+          client: { select: { id: true, name: true } },
+        },
+        orderBy: [{ lastSeenAt: 'desc' }, { createdAt: 'desc' }],
+      }),
+      this.prisma.device.count(),
+    ])
+
+    const data = devices.map((d) => ({
+      ...d,
+      online: d.activated && !!d.lastSeenAt && d.lastSeenAt >= onlineThreshold,
+    }))
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      onlineCount: data.filter((d) => d.online).length,
+    }
   }
 
   async activate(code: string, ipAddress?: string) {

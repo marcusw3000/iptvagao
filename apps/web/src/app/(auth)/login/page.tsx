@@ -36,6 +36,8 @@ export default function LoginPage() {
       const { role: currentRole } = useAuth.getState()
       if (currentRole === 'client_admin' || currentRole === 'client_user') {
         router.push('/portal')
+      } else if (currentRole === 'reseller') {
+        router.push('/reseller-portal')
       } else {
         router.push('/dashboard')
       }

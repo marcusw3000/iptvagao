@@ -14,6 +14,14 @@ export class DevicesController {
     return this.devicesService.create(dto)
   }
 
+  @Get('monitoring')
+  findAllForMonitoring(@Query() pagination: PaginationDto) {
+    return this.devicesService.findAllForMonitoring({
+      page: pagination.page ?? 1,
+      limit: pagination.limit ?? 50,
+    })
+  }
+
   @Get('by-client/:clientId')
   findByClient(@Param('clientId') clientId: string, @Query() pagination: PaginationDto) {
     return this.devicesService.findByClient(clientId, {
@@ -40,5 +48,10 @@ export class ActivateController {
   @Post(':code')
   activate(@Param('code') code: string) {
     return this.devicesService.activate(code)
+  }
+
+  @Post('heartbeat/:deviceId')
+  heartbeat(@Param('deviceId') deviceId: string, @Body() body: { ipAddress?: string }) {
+    return this.devicesService.heartbeat(deviceId, body.ipAddress)
   }
 }

@@ -8,6 +8,7 @@ interface AuthState {
   _hasHydrated: boolean
   role: string | null
   clientId: string | null
+  resellerId: string | null
   login: (username: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -20,6 +21,7 @@ export const useAuth = create<AuthState>()(
       _hasHydrated: false,
       role: null,
       clientId: null,
+      resellerId: null,
 
       async login(username, password) {
         const { data } = await api.post<{ accessToken: string }>('/auth/login', {
@@ -33,12 +35,13 @@ export const useAuth = create<AuthState>()(
           isAuthenticated: true,
           role: payload.role ?? null,
           clientId: payload.clientId ?? null,
+          resellerId: payload.resellerId ?? null,
         })
       },
 
       logout() {
         localStorage.removeItem('access_token')
-        set({ token: null, isAuthenticated: false, role: null, clientId: null })
+        set({ token: null, isAuthenticated: false, role: null, clientId: null, resellerId: null })
         window.location.href = '/login'
       },
     }),
@@ -54,17 +57,19 @@ export const useAuth = create<AuthState>()(
         const isAuthenticated = !!state?.token
         let role: string | null = null
         let clientId: string | null = null
+        let resellerId: string | null = null
         if (state?.token) {
           localStorage.setItem('access_token', state.token)
           try {
             const payload = JSON.parse(atob(state.token.split('.')[1]))
             role = payload.role ?? null
             clientId = payload.clientId ?? null
+            resellerId = payload.resellerId ?? null
           } catch {
             // malformed token — treat as unauthenticated
           }
         }
-        useAuth.setState({ _hasHydrated: true, isAuthenticated, role, clientId })
+        useAuth.setState({ _hasHydrated: true, isAuthenticated, role, clientId, resellerId })
       },
     },
   ),

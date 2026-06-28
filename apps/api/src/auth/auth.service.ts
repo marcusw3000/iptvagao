@@ -32,6 +32,7 @@ export class AuthService {
       username: user.username,
       role: user.role,
       clientId: user.clientId,
+      resellerId: user.resellerId,
     }
 
     return {
