@@ -165,7 +165,10 @@ describe('ClientsService', () => {
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'user-1' },
-          data: expect.objectContaining({ username: expect.any(String) }),
+          data: expect.objectContaining({
+            username: expect.any(String),
+            password: expect.stringMatching(/^\$2[ab]\$/),
+          }),
         }),
       )
     })

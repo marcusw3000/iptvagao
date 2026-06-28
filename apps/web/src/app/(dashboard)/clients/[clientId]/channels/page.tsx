@@ -138,7 +138,7 @@ export default function ChannelsPage() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
-        <Link href={`/clients/${clientId}/devices`} className="text-gray-400 hover:text-white transition-colors">
+        <Link href="/clients" className="text-gray-400 hover:text-white transition-colors">
           <ArrowLeft size={20} />
         </Link>
         <Link href={`/clients/${clientId}/devices`} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">Dispositivos</Link>
