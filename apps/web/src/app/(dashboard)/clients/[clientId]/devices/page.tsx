@@ -98,6 +98,12 @@ export default function DevicesPage() {
         >
           Canais
         </Link>
+        <Link
+          href={`/clients/${clientId}/subscription`}
+          className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
+        >
+          Assinatura
+        </Link>
         <h2 className="text-2xl font-bold text-white">Dispositivos</h2>
         <button
           onClick={() => setShowCreate(true)}
