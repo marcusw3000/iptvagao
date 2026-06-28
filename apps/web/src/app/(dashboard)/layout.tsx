@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
+import { Sidebar } from '@/components/sidebar'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, _hasHydrated } = useAuth()
@@ -24,5 +25,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!isAuthenticated) return null
 
-  return <>{children}</>
+  return (
+    <div className="flex min-h-screen bg-gray-950">
+      <Sidebar />
+      <main className="flex-1 p-8 overflow-y-auto">
+        {children}
+      </main>
+    </div>
+  )
 }
