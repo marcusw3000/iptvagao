@@ -12,6 +12,7 @@ import { ChannelsModule } from './channels/channels.module'
 import { SubscriptionsModule } from './subscriptions/subscriptions.module'
 import { PaymentsModule } from './payments/payments.module'
 import { DashboardModule } from './dashboard/dashboard.module'
+import { ResellersModule } from './resellers/resellers.module'
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DashboardModule } from './dashboard/dashboard.module'
     SubscriptionsModule,
     PaymentsModule,
     DashboardModule,
+    ResellersModule,
   ],
 })
 export class AppModule {}
