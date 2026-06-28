@@ -70,8 +70,9 @@ export default function DevicesPage() {
       reset()
       loadDevices(page)
       toast.success('Dispositivo registrado')
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? 'Erro ao registrar dispositivo')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } }
+      toast.error(err.response?.data?.message ?? 'Erro ao registrar dispositivo')
     } finally {
       setCreating(false)
     }
