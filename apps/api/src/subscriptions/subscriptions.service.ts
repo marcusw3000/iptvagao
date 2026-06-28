@@ -16,9 +16,38 @@ const SUBSCRIPTION_SELECT = {
   plan: { select: { id: true, name: true, type: true, price: true } },
 } as const
 
+const SUBSCRIPTION_SELECT_WITH_CLIENT = {
+  id: true,
+  clientId: true,
+  planId: true,
+  status: true,
+  startDate: true,
+  endDate: true,
+  createdAt: true,
+  updatedAt: true,
+  plan: { select: { id: true, name: true, type: true, price: true } },
+  client: { select: { id: true, name: true, email: true } },
+} as const
+
 @Injectable()
 export class SubscriptionsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findAll({ page = 1, limit = 20, status }: { page: number; limit: number; status?: SubscriptionStatus }) {
+    const skip = (page - 1) * limit
+    const where = status ? { status } : undefined
+    const [data, total] = await Promise.all([
+      this.prisma.subscription.findMany({
+        skip,
+        take: limit,
+        select: SUBSCRIPTION_SELECT_WITH_CLIENT,
+        orderBy: { createdAt: 'desc' },
+        where,
+      }),
+      this.prisma.subscription.count({ where }),
+    ])
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
+  }
 
   async create(dto: CreateSubscriptionDto) {
     const exists = await this.prisma.subscription.findUnique({ where: { clientId: dto.clientId } })

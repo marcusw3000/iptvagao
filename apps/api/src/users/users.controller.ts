@@ -15,10 +15,11 @@ export class UsersController {
   }
 
   @Get()
-  findAll(@Query() pagination: PaginationDto) {
+  findAll(@Query() pagination: PaginationDto, @Query('internalOnly') internalOnly?: string) {
     return this.usersService.findAll({
       page: pagination.page ?? 1,
       limit: pagination.limit ?? 20,
+      internalOnly: internalOnly === 'true',
     })
   }
 

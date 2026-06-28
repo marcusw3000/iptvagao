@@ -1,13 +1,24 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
+import { SubscriptionStatus } from '@prisma/client'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { ActivateSubscriptionDto } from './dto/activate-subscription.dto'
 import { CreateSubscriptionDto } from './dto/create-subscription.dto'
 import { SubscriptionsService } from './subscriptions.service'
+import { PaginationDto } from '../common/dto/pagination.dto'
 
 @Controller('subscriptions')
 @UseGuards(JwtAuthGuard)
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
+
+  @Get()
+  findAll(@Query() pagination: PaginationDto, @Query('status') status?: string) {
+    return this.subscriptionsService.findAll({
+      page: pagination.page ?? 1,
+      limit: pagination.limit ?? 20,
+      status: status as SubscriptionStatus | undefined,
+    })
+  }
 
   @Post()
   create(@Body() dto: CreateSubscriptionDto) {

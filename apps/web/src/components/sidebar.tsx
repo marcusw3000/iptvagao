@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   LogOut,
   UserCheck,
+  ShieldCheck,
+  Receipt,
 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useAuth } from '@/lib/auth'
@@ -15,8 +17,10 @@ import { useAuth } from '@/lib/auth'
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clients', label: 'Clientes', icon: Users },
+  { href: '/subscriptions', label: 'Assinaturas', icon: Receipt },
   { href: '/plans', label: 'Planos', icon: CreditCard },
   { href: '/resellers', label: 'Revendedores', icon: UserCheck },
+  { href: '/users', label: 'Usuários', icon: ShieldCheck },
 ]
 
 export function Sidebar() {

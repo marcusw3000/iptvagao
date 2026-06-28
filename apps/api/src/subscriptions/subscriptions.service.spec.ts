@@ -21,7 +21,7 @@ const mockSubscription = {
 describe('SubscriptionsService', () => {
   let service: SubscriptionsService
   let prisma: {
-    subscription: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock }
+    subscription: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; findMany: jest.Mock; count: jest.Mock }
     client: { findUnique: jest.Mock }
     plan: { findUnique: jest.Mock }
   }
@@ -32,6 +32,8 @@ describe('SubscriptionsService', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(mockSubscription),
         update: jest.fn().mockResolvedValue(mockSubscription),
+        findMany: jest.fn().mockResolvedValue([mockSubscription]),
+        count: jest.fn().mockResolvedValue(1),
       },
       client: { findUnique: jest.fn().mockResolvedValue(mockClient) },
       plan: { findUnique: jest.fn().mockResolvedValue(mockPlan) },
@@ -43,6 +45,21 @@ describe('SubscriptionsService', () => {
       ],
     }).compile()
     service = module.get<SubscriptionsService>(SubscriptionsService)
+  })
+
+  it('findAll returns paginated result', async () => {
+    const result = await service.findAll({ page: 1, limit: 10 })
+    expect(result).toHaveProperty('data')
+    expect(result).toHaveProperty('total', 1)
+    expect(result).toHaveProperty('totalPages', 1)
+    expect(Array.isArray(result.data)).toBe(true)
+  })
+
+  it('findAll filters by status when provided', async () => {
+    await service.findAll({ page: 1, limit: 10, status: SubscriptionStatus.active })
+    expect(prisma.subscription.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: SubscriptionStatus.active } }),
+    )
   })
 
   it('create returns subscription with plan', async () => {

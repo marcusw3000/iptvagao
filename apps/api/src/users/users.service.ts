@@ -33,16 +33,20 @@ export class UsersService {
     })
   }
 
-  async findAll({ page = 1, limit = 20 }: { page: number; limit: number }) {
+  async findAll({ page = 1, limit = 20, internalOnly }: { page: number; limit: number; internalOnly?: boolean }) {
     const skip = (page - 1) * limit
+    const where = internalOnly
+      ? { role: { in: ['master_admin', 'support', 'financial'] as any[] } }
+      : undefined
     const [data, total] = await Promise.all([
       this.prisma.user.findMany({
         skip,
         take: limit,
         select: USER_SELECT,
         orderBy: { createdAt: 'desc' },
+        where,
       }),
-      this.prisma.user.count(),
+      this.prisma.user.count({ where }),
     ])
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
   }
