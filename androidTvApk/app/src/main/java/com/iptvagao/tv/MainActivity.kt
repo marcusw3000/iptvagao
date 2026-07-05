@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -21,6 +20,8 @@ import com.iptvagao.tv.data.Api
 import com.iptvagao.tv.data.ChannelDto
 import com.iptvagao.tv.data.Session
 import com.iptvagao.tv.ui.ChannelsScreen
+import com.iptvagao.tv.ui.IptvColors
+import com.iptvagao.tv.ui.IptvTheme
 import com.iptvagao.tv.ui.PairingScreen
 import com.iptvagao.tv.ui.PlayerScreen
 import kotlinx.coroutines.delay
@@ -39,8 +40,8 @@ class MainActivity : ComponentActivity() {
         val session = Session(this)
 
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                Box(Modifier.fillMaxSize().background(Color(0xFF0F172A))) {
+            IptvTheme {
+                Box(Modifier.fillMaxSize().background(IptvColors.Background)) {
                     App(session)
                 }
             }
@@ -94,7 +95,7 @@ private fun App(session: Session) {
     }
 
     blockedMessage?.let { message ->
-        Box(Modifier.fillMaxSize().background(Color(0xE60F172A))) {
+        Box(Modifier.fillMaxSize().background(IptvColors.Background.copy(alpha = 0.92f))) {
             androidx.compose.material3.Text(
                 message,
                 style = MaterialTheme.typography.headlineSmall,
