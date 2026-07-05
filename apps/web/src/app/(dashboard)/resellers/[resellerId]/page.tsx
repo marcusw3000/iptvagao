@@ -11,6 +11,7 @@ import {
   CheckCircle,
   XCircle,
   DollarSign,
+  BadgeCheck,
 } from 'lucide-react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
@@ -81,7 +82,22 @@ const withdrawalSchema = z.object({
 
 type WithdrawalForm = z.infer<typeof withdrawalSchema>
 
-type TabId = 'commissions' | 'withdrawals'
+type TabId = 'commissions' | 'withdrawals' | 'clients'
+
+interface ResellerClient {
+  id: string
+  name: string
+  email: string
+  active: boolean
+  createdAt: string
+}
+
+interface PaginatedClients {
+  data: ResellerClient[]
+  total: number
+  page: number
+  totalPages: number
+}
 
 export default function ResellerDetailPage() {
   const params = useParams()
@@ -97,6 +113,9 @@ export default function ResellerDetailPage() {
 
   const [withdrawals, setWithdrawals] = useState<PaginatedWithdrawals | null>(null)
   const [wdPage, setWdPage] = useState(1)
+
+  const [clients, setClients] = useState<PaginatedClients | null>(null)
+  const [clientsPage, setClientsPage] = useState(1)
 
   const [showWithdrawal, setShowWithdrawal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -138,10 +157,22 @@ export default function ResellerDetailPage() {
     }
   }
 
+  async function loadClients(p = 1) {
+    try {
+      const r = await api.get<PaginatedClients>(
+        `/clients?resellerId=${resellerId}&page=${p}&limit=20`,
+      )
+      setClients(r.data)
+      setClientsPage(p)
+    } catch {
+      toast.error('Erro ao carregar clientes')
+    }
+  }
+
   useEffect(() => {
     async function init() {
       setLoading(true)
-      await Promise.all([loadReseller(), loadCommissions(), loadWithdrawals()])
+      await Promise.all([loadReseller(), loadCommissions(), loadWithdrawals(), loadClients()])
       setLoading(false)
     }
     init()
@@ -181,6 +212,16 @@ export default function ResellerDetailPage() {
       toast.success('Saque rejeitado')
     } catch {
       toast.error('Erro ao rejeitar saque')
+    }
+  }
+
+  async function handlePayWithdrawal(wdId: string) {
+    try {
+      await api.patch(`/resellers/${resellerId}/withdrawals/${wdId}/pay`)
+      await Promise.all([loadReseller(), loadWithdrawals(wdPage)])
+      toast.success('Saque marcado como pago')
+    } catch {
+      toast.error('Erro ao marcar saque como pago')
     }
   }
 
@@ -270,6 +311,17 @@ export default function ResellerDetailPage() {
           )}
         >
           Saques
+        </button>
+        <button
+          onClick={() => setActiveTab('clients')}
+          className={cn(
+            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            activeTab === 'clients'
+              ? 'bg-gray-800 text-white'
+              : 'text-gray-400 hover:text-white',
+          )}
+        >
+          Clientes
         </button>
 
         {activeTab === 'withdrawals' && (
@@ -379,6 +431,16 @@ export default function ResellerDetailPage() {
                           </button>
                         </div>
                       )}
+                      {wd.status === 'approved' && (
+                        <button
+                          onClick={() => handlePayWithdrawal(wd.id)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-emerald-900/30 hover:bg-emerald-900/60 text-emerald-400 rounded transition-colors"
+                          title="Marcar como pago"
+                        >
+                          <BadgeCheck size={12} />
+                          Marcar como Pago
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -400,6 +462,57 @@ export default function ResellerDetailPage() {
                 <button disabled={wdPage <= 1} onClick={() => loadWithdrawals(wdPage - 1)} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-40">Anterior</button>
                 <span className="px-3 py-1">{wdPage} / {withdrawals.totalPages}</span>
                 <button disabled={wdPage >= withdrawals.totalPages} onClick={() => loadWithdrawals(wdPage + 1)} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-40">Próximo</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === 'clients' && (
+        <>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-400 text-left">
+                  <th className="px-4 py-3 font-medium">Nome</th>
+                  <th className="px-4 py-3 font-medium">Email</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Desde</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients?.data.map((c) => (
+                  <tr key={c.id} className="border-b border-gray-800 last:border-0">
+                    <td className="px-4 py-3 text-white font-medium">{c.name}</td>
+                    <td className="px-4 py-3 text-gray-400">{c.email}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn('text-xs px-2 py-1 rounded-full', c.active ? 'bg-emerald-900/40 text-emerald-400' : 'bg-red-900/40 text-red-400')}>
+                        {c.active ? 'Ativo' : 'Suspenso'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">
+                      {new Date(c.createdAt).toLocaleDateString('pt-BR')}
+                    </td>
+                  </tr>
+                ))}
+                {clients?.data.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                      Nenhum cliente vinculado
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {clients && clients.totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 text-sm text-gray-400">
+              <span>{clients.total} clientes</span>
+              <div className="flex gap-2">
+                <button disabled={clientsPage <= 1} onClick={() => loadClients(clientsPage - 1)} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-40">Anterior</button>
+                <span className="px-3 py-1">{clientsPage} / {clients.totalPages}</span>
+                <button disabled={clientsPage >= clients.totalPages} onClick={() => loadClients(clientsPage + 1)} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-40">Próximo</button>
               </div>
             </div>
           )}

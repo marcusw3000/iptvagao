@@ -1,8 +1,8 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common'
 import { UsersService } from './users.service'
 import { CreateUserDto } from './dto/create-user.dto'
+import { FindUsersQueryDto } from './dto/find-users-query.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { PaginationDto } from '../common/dto/pagination.dto'
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -15,16 +15,26 @@ export class UsersController {
   }
 
   @Get()
-  findAll(@Query() pagination: PaginationDto, @Query('internalOnly') internalOnly?: string) {
+  findAll(@Query() query: FindUsersQueryDto) {
     return this.usersService.findAll({
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      internalOnly: internalOnly === 'true',
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      internalOnly: query.internalOnly === 'true',
     })
   }
 
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id)
+  }
+
+  @Patch(':id/deactivate')
+  deactivate(@Param('id') id: string) {
+    return this.usersService.deactivate(id)
+  }
+
+  @Patch(':id/activate')
+  activateUser(@Param('id') id: string) {
+    return this.usersService.activateUser(id)
   }
 }

@@ -97,4 +97,16 @@ export class SubscriptionsService {
       select: SUBSCRIPTION_SELECT,
     })
   }
+
+  async changePlan(id: string, planId: string) {
+    const subscription = await this.prisma.subscription.findUnique({ where: { id } })
+    if (!subscription) throw new NotFoundException('Assinatura não encontrada')
+    const plan = await this.prisma.plan.findUnique({ where: { id: planId } })
+    if (!plan) throw new NotFoundException('Plano não encontrado')
+    return this.prisma.subscription.update({
+      where: { id },
+      data: { planId },
+      select: SUBSCRIPTION_SELECT,
+    })
+  }
 }

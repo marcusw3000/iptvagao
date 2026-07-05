@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { UserPlus, RefreshCw, Shield, HeadphonesIcon, DollarSign } from 'lucide-react'
+import { UserPlus, RefreshCw, Shield, HeadphonesIcon, DollarSign, Ban, CheckCircle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/cn'
 
@@ -87,6 +87,17 @@ export default function UsersPage() {
 
   useEffect(() => { loadUsers() }, [loadUsers])
 
+  async function toggleActive(user: User) {
+    try {
+      const endpoint = user.active ? `/users/${user.id}/deactivate` : `/users/${user.id}/activate`
+      await api.patch(endpoint)
+      loadUsers(page)
+      toast.success(user.active ? 'Usuário desativado' : 'Usuário ativado')
+    } catch {
+      toast.error('Erro ao atualizar status')
+    }
+  }
+
   async function onSubmit(data: CreateForm) {
     setCreating(true)
     try {
@@ -133,6 +144,7 @@ export default function UsersPage() {
                   <th className="px-4 py-3 font-medium">Perfil</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Último acesso</th>
+                  <th className="px-4 py-3 font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -156,12 +168,21 @@ export default function UsersPage() {
                       <td className="px-4 py-3 text-gray-500 text-xs">
                         {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('pt-BR') : '—'}
                       </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => toggleActive(user)}
+                          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                          title={user.active ? 'Desativar' : 'Ativar'}
+                        >
+                          {user.active ? <Ban size={14} /> : <CheckCircle size={14} />}
+                        </button>
+                      </td>
                     </tr>
                   )
                 })}
                 {result?.data.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                       Nenhum usuário interno cadastrado
                     </td>
                   </tr>

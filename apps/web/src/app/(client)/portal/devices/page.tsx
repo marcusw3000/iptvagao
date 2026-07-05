@@ -7,6 +7,13 @@ import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/cn'
 
+const ONLINE_MS = 5 * 60 * 1000
+
+function isOnline(lastSeenAt: string | null): boolean {
+  if (!lastSeenAt) return false
+  return Date.now() - new Date(lastSeenAt).getTime() < ONLINE_MS
+}
+
 interface Device {
   id: string
   clientId: string
@@ -59,6 +66,7 @@ export default function PortalDevicesPage() {
                   <th className="px-4 py-3 font-medium">Nome</th>
                   <th className="px-4 py-3 font-medium">Código</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Online</th>
                   <th className="px-4 py-3 font-medium">Visto por último</th>
                 </tr>
               </thead>
@@ -79,6 +87,17 @@ export default function PortalDevicesPage() {
                         {device.activated ? 'Ativado' : 'Aguardando'}
                       </span>
                     </td>
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-1.5">
+                        <span className={cn(
+                          'w-2 h-2 rounded-full',
+                          isOnline(device.lastSeenAt) ? 'bg-emerald-400' : 'bg-gray-600',
+                        )} />
+                        <span className={cn('text-xs', isOnline(device.lastSeenAt) ? 'text-emerald-400' : 'text-gray-600')}>
+                          {isOnline(device.lastSeenAt) ? 'Online' : 'Offline'}
+                        </span>
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-gray-400 text-xs">
                       {device.lastSeenAt
                         ? new Date(device.lastSeenAt).toLocaleString('pt-BR')
@@ -88,7 +107,7 @@ export default function PortalDevicesPage() {
                 ))}
                 {result?.data.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                       Nenhum dispositivo registrado
                     </td>
                   </tr>

@@ -11,6 +11,7 @@ import {
 import { ResellersService } from './resellers.service'
 import { CreateResellerDto } from './dto/create-reseller.dto'
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto'
+import { FindWithdrawalsQueryDto } from './dto/find-withdrawals-query.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { PaginationDto } from '../common/dto/pagination.dto'
 
@@ -29,6 +30,15 @@ export class ResellersController {
     return this.resellersService.findAll({
       page: pagination.page ?? 1,
       limit: pagination.limit ?? 20,
+    })
+  }
+
+  @Get('all-withdrawals')
+  findAllWithdrawals(@Query() query: FindWithdrawalsQueryDto) {
+    return this.resellersService.findAllWithdrawals({
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      status: query.status,
     })
   }
 
@@ -79,5 +89,10 @@ export class ResellersController {
   @Patch(':id/withdrawals/:wid/reject')
   rejectWithdrawal(@Param('id') id: string, @Param('wid') wid: string) {
     return this.resellersService.rejectWithdrawal(id, wid)
+  }
+
+  @Patch(':id/withdrawals/:wid/pay')
+  payWithdrawal(@Param('id') id: string, @Param('wid') wid: string) {
+    return this.resellersService.payWithdrawal(id, wid)
   }
 }

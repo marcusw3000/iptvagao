@@ -21,16 +21,22 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateUserDto) {
-    const exists = await this.prisma.user.findUnique({ where: { username: dto.username } })
-    if (exists) throw new ConflictException('Username já utilizado')
-
     const { password, ...data } = dto
     const hashed = await bcrypt.hash(password, 10)
 
-    return this.prisma.user.create({
-      data: { ...data, password: hashed },
-      select: USER_SELECT,
-    })
+    try {
+      return await this.prisma.user.create({
+        data: { ...data, password: hashed },
+        select: USER_SELECT,
+      })
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        const target: string[] = e.meta?.target ?? []
+        if (target.includes('clientId')) throw new ConflictException('Cliente já possui um usuário cadastrado')
+        throw new ConflictException('Username já utilizado')
+      }
+      throw e
+    }
   }
 
   async findAll({ page = 1, limit = 20, internalOnly }: { page: number; limit: number; internalOnly?: boolean }) {
@@ -60,14 +66,25 @@ export class UsersService {
     return user
   }
 
+  async deactivate(id: string) {
+    await this.findOne(id)
+    return this.prisma.user.update({ where: { id }, data: { active: false }, select: USER_SELECT })
+  }
+
+  async activateUser(id: string) {
+    await this.findOne(id)
+    return this.prisma.user.update({ where: { id }, data: { active: true }, select: USER_SELECT })
+  }
+
   async generateClientCredentials(): Promise<{ username: string; password: string }> {
+    const { randomBytes, randomInt } = await import('crypto')
     const letters = 'abcdefghijklmnopqrstuvwxyz'
     let username = ''
 
     for (let attempts = 0; attempts < 100; attempts++) {
       const candidate = Array.from(
         { length: 4 },
-        () => letters[Math.floor(Math.random() * letters.length)],
+        () => letters[randomBytes(1)[0] % 26],
       ).join('')
 
       const exists = await this.prisma.user.findUnique({ where: { username: candidate } })
@@ -81,7 +98,7 @@ export class UsersService {
       throw new Error('Could not generate unique username after 100 attempts')
     }
 
-    const password = String(Math.floor(100000 + Math.random() * 900000))
+    const password = String(randomInt(100_000, 1_000_000))
     return { username, password }
   }
 }

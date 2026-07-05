@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/store.ts","./src/types.ts","./src/components/categorysidebar.tsx","./src/components/channelcard.tsx","./src/components/channelgrid.tsx","./src/components/heartbeat.tsx","./src/lib/api.ts","./src/lib/gridconfig.ts","./src/screens/homescreen.tsx","./src/screens/loginscreen.tsx","./src/screens/playerscreen.tsx"],"version":"5.9.3"}

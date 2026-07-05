@@ -1,10 +1,8 @@
-import { IsBoolean, IsInt, IsOptional, IsString, MinLength } from 'class-validator'
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, MinLength } from 'class-validator'
 import { Type } from 'class-transformer'
+import { PaginationDto } from '../../common/dto/pagination.dto'
 
 export class CreateChannelDto {
-  @IsString()
-  clientId: string
-
   @IsString()
   @IsOptional()
   categoryId?: string
@@ -24,6 +22,11 @@ export class CreateChannelDto {
   @Type(() => Number)
   @IsInt()
   order?: number
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  planIds?: string[]
 }
 
 export class UpdateChannelDto {
@@ -51,4 +54,11 @@ export class UpdateChannelDto {
   @IsBoolean()
   @IsOptional()
   active?: boolean
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  planIds?: string[]
 }
+
+export class FindChannelsQueryDto extends PaginationDto {}

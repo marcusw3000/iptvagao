@@ -3,9 +3,6 @@ import { Type } from 'class-transformer'
 
 export class CreateCategoryDto {
   @IsString()
-  clientId: string
-
-  @IsString()
   @MinLength(1)
   name: string
 

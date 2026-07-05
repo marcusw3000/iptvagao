@@ -1,7 +1,8 @@
 import { Test } from '@nestjs/testing'
-import { NotFoundException } from '@nestjs/common'
+import { BadRequestException, NotFoundException } from '@nestjs/common'
 import { PaymentsService } from './payments.service'
 import { PrismaService } from '../prisma/prisma.service'
+import { AbacatepayService } from '../abacatepay/abacatepay.service'
 import { PaymentMethod, PaymentStatus, SubscriptionStatus } from '@prisma/client'
 
 const mockSubscription = {
@@ -27,9 +28,17 @@ const mockPayment = {
 
 const confirmedPayment = { ...mockPayment, status: PaymentStatus.paid, paidAt: new Date() }
 
+const mockPlan = { id: 'plan-1', name: 'Premium', price: '99.90' }
+const mockSubscriptionFull = {
+  ...{ id: 'sub-1', clientId: 'client-1', status: SubscriptionStatus.past_due },
+  plan: mockPlan,
+  client: { id: 'client-1', name: 'Acme', email: 'acme@test.com', document: '12345678901', phone: null },
+}
+
 describe('PaymentsService', () => {
   let service: PaymentsService
   let prisma: any
+  let abacatepay: any
 
   beforeEach(async () => {
     const paymentUpdateMock = jest.fn().mockResolvedValue(confirmedPayment)
@@ -53,12 +62,26 @@ describe('PaymentsService', () => {
       resellerCommission: {
         create: jest.fn().mockResolvedValue({}),
       },
-      $transaction: jest.fn((queries) => Promise.resolve([confirmedPayment, { ...mockSubscription, status: SubscriptionStatus.active }])),
+      $transaction: jest.fn(),
     }
+
+    abacatepay = {
+      createCustomer: jest.fn().mockResolvedValue({ id: 'cust-1', name: 'Acme', email: 'acme@test.com' }),
+      ensureProduct: jest.fn().mockResolvedValue(undefined),
+      createCheckout: jest.fn().mockResolvedValue({ id: 'chk-1', url: 'https://pay.abacatepay.com/chk-1' }),
+      verifyWebhookSignature: jest.fn().mockReturnValue(true),
+    }
+
+    // callback-style $transaction: pass prisma itself as tx so inner mocks are the same references
+    prisma.$transaction.mockImplementation((cb: any) =>
+      typeof cb === 'function' ? cb(prisma) : Promise.resolve([confirmedPayment]),
+    )
+
     const module = await Test.createTestingModule({
       providers: [
         PaymentsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: AbacatepayService, useValue: abacatepay },
       ],
     }).compile()
     service = module.get<PaymentsService>(PaymentsService)
@@ -145,5 +168,54 @@ describe('PaymentsService', () => {
         }),
       }),
     )
+  })
+
+  describe('createCheckout', () => {
+    beforeEach(() => {
+      prisma.subscription.findUnique.mockResolvedValue(mockSubscriptionFull)
+    })
+
+    it('returns paymentId and checkoutUrl on success', async () => {
+      const result = await service.createCheckout('sub-1')
+      expect(result.paymentId).toBe('pay-1')
+      expect(result.checkoutUrl).toBe('https://pay.abacatepay.com/chk-1')
+    })
+
+    it('calls ensureProduct with price in centavos', async () => {
+      await service.createCheckout('sub-1')
+      expect(abacatepay.ensureProduct).toHaveBeenCalledWith(
+        expect.objectContaining({ priceInCentavos: 9990 }),
+      )
+    })
+
+    it('throws NotFoundException when subscription not found', async () => {
+      prisma.subscription.findUnique.mockResolvedValue(null)
+      await expect(service.createCheckout('bad')).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  describe('handleWebhook', () => {
+    const rawBody = Buffer.from('{}')
+
+    it('throws BadRequestException on invalid signature', async () => {
+      abacatepay.verifyWebhookSignature.mockReturnValue(false)
+      await expect(
+        service.handleWebhook({}, rawBody, 'bad-sig'),
+      ).rejects.toThrow(BadRequestException)
+    })
+
+    it('confirms payment on checkout.completed', async () => {
+      prisma.payment.findUnique.mockResolvedValue(mockPayment)
+      const payload = { event: 'checkout.completed', data: { externalId: 'pay-1' } }
+      await service.handleWebhook(payload, rawBody, 'sig')
+      expect(prisma.$transaction).toHaveBeenCalled()
+    })
+
+    it('skips confirm when payment already paid', async () => {
+      prisma.payment.findUnique.mockResolvedValue({ ...mockPayment, status: PaymentStatus.paid })
+      const payload = { event: 'checkout.completed', data: { externalId: 'pay-1' } }
+      await service.handleWebhook(payload, rawBody, 'sig')
+      expect(prisma.$transaction).not.toHaveBeenCalled()
+    })
   })
 })

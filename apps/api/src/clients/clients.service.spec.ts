@@ -122,6 +122,26 @@ describe('ClientsService', () => {
     expect(result.totalPages).toBe(1)
   })
 
+  it('findAll filters by resellerId when provided', async () => {
+    await service.findAll({ page: 1, limit: 20, resellerId: 'res-1' })
+    expect(prisma.client.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ resellerId: 'res-1' }) }),
+    )
+  })
+
+  it('findAll filters by search across name and email', async () => {
+    await service.findAll({ page: 1, limit: 20, search: 'empresa' })
+    expect(prisma.client.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({ name: expect.objectContaining({ contains: 'empresa' }) }),
+          ]),
+        }),
+      }),
+    )
+  })
+
   it('create calls usersService.create with correct clientId', async () => {
     await service.create({ name: 'Empresa', email: 'e@test.com' })
     expect(usersService.create).toHaveBeenCalledWith(

@@ -17,9 +17,10 @@ const DEVICE_SELECT = {
   updatedAt: true,
 } as const
 
-function generateCode(length: number): string {
+export function generateCode(length: number): string {
+  const { randomBytes } = require('crypto') as typeof import('crypto')
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  return Array.from({ length }, () => chars[randomBytes(1)[0] % chars.length]).join('')
 }
 
 @Injectable()
@@ -29,7 +30,15 @@ export class DevicesService {
   async create(dto: CreateDeviceDto) {
     const activationCode = generateCode(6)
     return this.prisma.device.create({
-      data: { ...dto, activationCode },
+      data: { ...dto, activationCode, activated: true },
+      select: DEVICE_SELECT,
+    })
+  }
+
+  async selfRegister(clientId: string, name?: string) {
+    const activationCode = generateCode(6)
+    return this.prisma.device.create({
+      data: { clientId, name: name ?? 'TV', activationCode, activated: true },
       select: DEVICE_SELECT,
     })
   }
@@ -53,16 +62,6 @@ export class DevicesService {
     const device = await this.prisma.device.findUnique({ where: { id }, select: DEVICE_SELECT })
     if (!device) throw new NotFoundException('Dispositivo não encontrado')
     return device
-  }
-
-  async generateActivationCode(deviceId: string) {
-    await this.findOne(deviceId)
-    const code = generateCode(6)
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
-    const ac = await this.prisma.activationCode.create({
-      data: { code, deviceId, expiresAt },
-    })
-    return { code: ac.code, expiresAt: ac.expiresAt }
   }
 
   async heartbeat(deviceId: string, ipAddress?: string) {
@@ -137,19 +136,8 @@ export class DevicesService {
     }
   }
 
-  async activate(code: string, ipAddress?: string) {
-    const ac = await this.prisma.activationCode.findUnique({ where: { code } })
-    if (!ac || ac.usedAt || ac.expiresAt < new Date()) {
-      throw new NotFoundException('Código inválido ou expirado')
-    }
-    await this.prisma.activationCode.update({ where: { id: ac.id }, data: { usedAt: new Date() } })
-    if (ac.deviceId) {
-      return this.prisma.device.update({
-        where: { id: ac.deviceId },
-        data: { activated: true, ipAddress: ipAddress ?? null, lastSeenAt: new Date() },
-        select: DEVICE_SELECT,
-      })
-    }
-    return { activated: true }
+  async remove(id: string) {
+    await this.findOne(id)
+    await this.prisma.device.delete({ where: { id } })
   }
 }

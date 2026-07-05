@@ -10,9 +10,8 @@ export class CategoriesService {
     return this.prisma.category.create({ data: dto })
   }
 
-  async findByClient(clientId: string) {
+  async findAll() {
     return this.prisma.category.findMany({
-      where: { clientId },
       orderBy: { order: 'asc' },
     })
   }

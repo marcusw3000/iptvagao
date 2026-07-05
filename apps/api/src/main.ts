@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core'
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify'
 import { ValidationPipe } from '@nestjs/common'
+import fastifyMultipart from '@fastify/multipart'
 import { AppModule } from './app.module'
 
 async function bootstrap() {
@@ -8,6 +9,31 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter({ logger: true }),
   )
+
+  // Capture raw body for webhook HMAC verification (skip multipart — let @fastify/multipart read the stream itself)
+  const fastify = app.getHttpAdapter().getInstance()
+  fastify.addHook('preParsing', async (req: any, _reply: unknown, payload: AsyncIterable<Buffer>) => {
+    const contentType = req.headers['content-type'] ?? ''
+    if (contentType.startsWith('multipart/form-data')) {
+      return payload
+    }
+
+    const chunks: Buffer[] = []
+    for await (const chunk of payload) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    }
+    const rawBody = Buffer.concat(chunks)
+    req.rawBody = rawBody
+    const { Readable } = await import('stream')
+    const stream = new Readable()
+    stream.push(rawBody)
+    stream.push(null)
+    return stream
+  })
+
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: 5 * 1024 * 1024 },
+  })
 
   app.setGlobalPrefix('api/v1')
 

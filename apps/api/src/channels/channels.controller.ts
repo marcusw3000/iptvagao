@@ -1,8 +1,11 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
+import { UserRole } from '@prisma/client'
 import { ChannelsService } from './channels.service'
-import { CreateChannelDto, UpdateChannelDto } from './dto/create-channel.dto'
+import { CreateChannelDto, FindChannelsQueryDto, UpdateChannelDto } from './dto/create-channel.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { PaginationDto } from '../common/dto/pagination.dto'
+import { Roles } from '../common/decorators/roles.decorator'
+
+const ADMIN_ROLES = [UserRole.master_admin, UserRole.support]
 
 @Controller('channels')
 @UseGuards(JwtAuthGuard)
@@ -14,12 +17,20 @@ export class ChannelsController {
     return this.channelsService.create(dto)
   }
 
-  @Get('by-client/:clientId')
-  findByClient(@Param('clientId') clientId: string, @Query() pagination: PaginationDto) {
-    return this.channelsService.findByClient(clientId, {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-    })
+  @Post('import-m3u')
+  @Roles(...ADMIN_ROLES)
+  importM3u(@Body() body: { url: string }) {
+    return this.channelsService.importFromM3u(body.url)
+  }
+
+  @Get('for-client/:clientId')
+  findForClient(@Param('clientId') clientId: string) {
+    return this.channelsService.findForClient(clientId)
+  }
+
+  @Get()
+  findAll(@Query() query: FindChannelsQueryDto) {
+    return this.channelsService.findAll({ page: query.page ?? 1, limit: query.limit ?? 50 })
   }
 
   @Get(':id')

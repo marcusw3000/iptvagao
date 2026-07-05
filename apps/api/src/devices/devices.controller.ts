@@ -1,8 +1,17 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Post, Query, UseGuards } from '@nestjs/common'
+import { UserRole } from '@prisma/client'
 import { DevicesService } from './devices.service'
 import { CreateDeviceDto } from './dto/create-device.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
+import { CurrentUser } from '../auth/decorators/current-user.decorator'
+import { Roles } from '../common/decorators/roles.decorator'
 import { PaginationDto } from '../common/dto/pagination.dto'
+
+const ADMIN_ROLES = [UserRole.master_admin, UserRole.support]
+
+type AuthUser = { role: UserRole; clientId: string | null }
+
+const isAdmin = (user: AuthUser) => (ADMIN_ROLES as UserRole[]).includes(user.role)
 
 @Controller('devices')
 @UseGuards(JwtAuthGuard)
@@ -10,11 +19,19 @@ export class DevicesController {
   constructor(private readonly devicesService: DevicesService) {}
 
   @Post()
+  @Roles(...ADMIN_ROLES)
   create(@Body() dto: CreateDeviceDto) {
     return this.devicesService.create(dto)
   }
 
+  @Post('self-register')
+  selfRegister(@CurrentUser() user: { clientId: string | null }, @Body() body?: { name?: string }) {
+    if (!user.clientId) throw new ForbiddenException('Usuário não vinculado a um cliente')
+    return this.devicesService.selfRegister(user.clientId, body?.name)
+  }
+
   @Get('monitoring')
+  @Roles(...ADMIN_ROLES)
   findAllForMonitoring(@Query() pagination: PaginationDto) {
     return this.devicesService.findAllForMonitoring({
       page: pagination.page ?? 1,
@@ -23,7 +40,14 @@ export class DevicesController {
   }
 
   @Get('by-client/:clientId')
-  findByClient(@Param('clientId') clientId: string, @Query() pagination: PaginationDto) {
+  findByClient(
+    @CurrentUser() user: AuthUser,
+    @Param('clientId') clientId: string,
+    @Query() pagination: PaginationDto,
+  ) {
+    if (!isAdmin(user) && user.clientId !== clientId) {
+      throw new ForbiddenException('Acesso negado')
+    }
     return this.devicesService.findByClient(clientId, {
       page: pagination.page ?? 1,
       limit: pagination.limit ?? 20,
@@ -31,27 +55,20 @@ export class DevicesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.devicesService.findOne(id)
+  async findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const device = await this.devicesService.findOne(id)
+    if (!isAdmin(user) && user.clientId !== device.clientId) {
+      throw new ForbiddenException('Acesso negado')
+    }
+    return device
   }
 
-  @Post(':id/activation-code')
-  generateActivationCode(@Param('id') id: string) {
-    return this.devicesService.generateActivationCode(id)
-  }
-}
-
-@Controller('activate')
-export class ActivateController {
-  constructor(private readonly devicesService: DevicesService) {}
-
-  @Post(':code')
-  activate(@Param('code') code: string) {
-    return this.devicesService.activate(code)
-  }
-
-  @Post('heartbeat/:deviceId')
-  heartbeat(@Param('deviceId') deviceId: string, @Body() body: { ipAddress?: string }) {
-    return this.devicesService.heartbeat(deviceId, body.ipAddress)
+  @Delete(':id')
+  async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const device = await this.devicesService.findOne(id)
+    if (!isAdmin(user) && user.clientId !== device.clientId) {
+      throw new ForbiddenException('Acesso negado')
+    }
+    return this.devicesService.remove(id)
   }
 }

@@ -214,4 +214,41 @@ export class ResellersService {
       select: WITHDRAWAL_SELECT,
     })
   }
+
+  async findAllWithdrawals({
+    page = 1,
+    limit = 20,
+    status,
+  }: {
+    page: number
+    limit: number
+    status?: WithdrawalStatus
+  }) {
+    const skip = (page - 1) * limit
+    const where = status ? { status } : undefined
+    const [data, total] = await Promise.all([
+      this.prisma.resellerWithdrawal.findMany({
+        skip,
+        take: limit,
+        where,
+        select: {
+          ...WITHDRAWAL_SELECT,
+          reseller: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.resellerWithdrawal.count({ where }),
+    ])
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
+  }
+
+  async payWithdrawal(resellerId: string, withdrawalId: string) {
+    await this.assertReseller(resellerId)
+    await this.assertWithdrawal(resellerId, withdrawalId)
+    return this.prisma.resellerWithdrawal.update({
+      where: { id: withdrawalId },
+      data: { status: WithdrawalStatus.paid, processedAt: new Date() },
+      select: WITHDRAWAL_SELECT,
+    })
+  }
 }

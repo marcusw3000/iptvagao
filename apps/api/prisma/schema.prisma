@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {
@@ -53,15 +54,16 @@ model Plan {
   type            PlanType @unique
   price           Decimal  @db.Decimal(10, 2)
   maxDevices      Int
-  storageGB       Int
+  storageGB       Int      @default(0)
   maxChannels     Int
-  maxPlaylists    Int
-  maxUsers        Int
+  maxPlaylists    Int      @default(0)
+  maxUsers        Int      @default(1)
   active          Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   subscriptions Subscription[]
+  channels      Channel[]
 
   @@map("plans")
 }
@@ -81,10 +83,6 @@ model Client {
   users         User[]
   subscription  Subscription?
   devices       Device[]
-  channels      Channel[]
-  playlists     Playlist[]
-  videos        Video[]
-  liveStreams    LiveStream[]
   alerts        Alert[]
 
   @@index([resellerId])
@@ -146,7 +144,7 @@ model User {
   username    String   @unique
   password    String
   role        UserRole @default(client_user)
-  clientId    String?
+  clientId    String?  @unique
   resellerId  String?
   active      Boolean  @default(true)
   lastLoginAt DateTime?
@@ -156,7 +154,6 @@ model User {
   client   Client?   @relation(fields: [clientId], references: [id])
   reseller Reseller? @relation(fields: [resellerId], references: [id])
 
-  @@index([clientId])
   @@index([resellerId])
   @@map("users")
 }
@@ -208,42 +205,26 @@ model Device {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  client          Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  activationCodes ActivationCode[]
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@map("devices")
 }
 
-model ActivationCode {
-  id        String           @id @default(cuid())
-  code      String           @unique
-  deviceId  String?
-  usedAt    DateTime?
-  expiresAt DateTime
-  createdAt DateTime         @default(now())
-
-  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-
-  @@map("activation_codes")
-}
-
 model Category {
   id        String   @id @default(cuid())
-  clientId  String
   name      String
   order     Int      @default(0)
   createdAt DateTime @default(now())
 
   channels  Channel[]
-  playlists Playlist[]
 
+  @@index([order])
   @@map("categories")
 }
 
 model Channel {
   id          String   @id @default(cuid())
-  clientId    String
   categoryId  String?
   name        String
   url         String
@@ -253,85 +234,13 @@ model Channel {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   category    Category? @relation(fields: [categoryId], references: [id])
+  plans       Plan[]
   epgPrograms EpgProgram[]
 
-  @@index([clientId])
   @@index([categoryId])
+  @@index([active])
   @@map("channels")
-}
-
-model Playlist {
-  id          String   @id @default(cuid())
-  clientId    String
-  categoryId  String?
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  client   Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  category Category?       @relation(fields: [categoryId], references: [id])
-  items    PlaylistItem[]
-
-  @@index([clientId])
-  @@index([categoryId])
-  @@map("playlists")
-}
-
-model PlaylistItem {
-  id         String   @id @default(cuid())
-  playlistId String
-  videoId    String?
-  streamId   String?
-  order      Int      @default(0)
-  createdAt  DateTime @default(now())
-
-  playlist Playlist    @relation(fields: [playlistId], references: [id])
-  video    Video?      @relation(fields: [videoId], references: [id])
-  stream   LiveStream? @relation(fields: [streamId], references: [id])
-
-  @@index([playlistId])
-  @@index([videoId])
-  @@index([streamId])
-  @@map("playlist_items")
-}
-
-model Video {
-  id           String   @id @default(cuid())
-  clientId     String
-  title        String
-  url          String
-  thumbnailUrl String?
-  durationSec  Int?
-  sizeBytes    BigInt?
-  mimeType     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  playlistItems PlaylistItem[]
-
-  @@index([clientId])
-  @@map("videos")
-}
-
-model LiveStream {
-  id        String   @id @default(cuid())
-  clientId  String
-  name      String
-  url       String
-  type      String   @default("hls")
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  playlistItems PlaylistItem[]
-
-  @@index([clientId])
-  @@map("live_streams")
 }
 
 model EpgProgram {

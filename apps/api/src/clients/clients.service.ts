@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { UserRole } from '@prisma/client'
 import * as bcrypt from 'bcrypt'
 import { PrismaService } from '../prisma/prisma.service'
@@ -16,10 +16,14 @@ const CLIENT_SELECT = {
   resellerId: true,
   createdAt: true,
   updatedAt: true,
+  reseller: { select: { id: true, name: true } },
+  subscription: { select: { status: true, plan: { select: { name: true } } } },
 } as const
 
 @Injectable()
 export class ClientsService {
+  private readonly logger = new Logger(ClientsService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
@@ -31,10 +35,13 @@ export class ClientsService {
 
     const credentials = await this.usersService.generateClientCredentials()
 
-    const client = await this.prisma.client.create({
-      data: dto,
-      select: CLIENT_SELECT,
-    })
+    let client: Awaited<ReturnType<typeof this.prisma.client.create>>
+    try {
+      client = await this.prisma.client.create({ data: dto, select: CLIENT_SELECT })
+    } catch (e: any) {
+      if (e?.code === 'P2002') throw new ConflictException('Email já utilizado')
+      throw e
+    }
 
     try {
       await this.usersService.create({
@@ -51,16 +58,36 @@ export class ClientsService {
     return { client, credentials }
   }
 
-  async findAll({ page = 1, limit = 20 }: { page: number; limit: number }) {
+  async findAll({
+    page = 1,
+    limit = 20,
+    resellerId,
+    search,
+  }: {
+    page: number
+    limit: number
+    resellerId?: string
+    search?: string
+  }) {
     const skip = (page - 1) * limit
+    const where: any = {}
+    if (resellerId) where.resellerId = resellerId
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+    const hasWhere = Object.keys(where).length > 0
     const [data, total] = await Promise.all([
       this.prisma.client.findMany({
         skip,
         take: limit,
         select: CLIENT_SELECT,
         orderBy: { createdAt: 'desc' },
+        where: hasWhere ? where : undefined,
       }),
-      this.prisma.client.count(),
+      this.prisma.client.count({ where: hasWhere ? where : undefined }),
     ])
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
   }

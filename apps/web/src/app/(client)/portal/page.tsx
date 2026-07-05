@@ -47,7 +47,7 @@ export default function PortalPage() {
         const [subRes, devRes, chRes] = await Promise.allSettled([
           api.get<Subscription>(`/subscriptions/by-client/${clientId}`),
           api.get<PaginatedMeta>(`/devices/by-client/${clientId}?page=1&limit=1`),
-          api.get<PaginatedMeta>(`/channels/by-client/${clientId}?page=1&limit=1`),
+          api.get<unknown[]>(`/channels/for-client/${clientId}`),
         ])
 
         if (subRes.status === 'fulfilled') {
@@ -60,7 +60,7 @@ export default function PortalPage() {
         }
 
         if (devRes.status === 'fulfilled') setDeviceCount(devRes.value.data.total)
-        if (chRes.status === 'fulfilled') setChannelCount(chRes.value.data.total)
+        if (chRes.status === 'fulfilled') setChannelCount(chRes.value.data.length)
       } finally {
         setLoading(false)
       }

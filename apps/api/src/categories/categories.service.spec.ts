@@ -5,7 +5,6 @@ import { PrismaService } from '../prisma/prisma.service'
 
 const mockCategory = {
   id: 'cat-1',
-  clientId: 'client-1',
   name: 'Filmes',
   order: 0,
   createdAt: new Date(),
@@ -42,16 +41,15 @@ describe('CategoriesService', () => {
   })
 
   it('create returns new category', async () => {
-    const result = await service.create({ clientId: 'client-1', name: 'Filmes' })
+    const result = await service.create({ name: 'Filmes' })
     expect(result.name).toBe('Filmes')
-    expect(result.clientId).toBe('client-1')
   })
 
-  it('findByClient returns categories ordered by order asc', async () => {
-    const result = await service.findByClient('client-1')
-    expect(result[0].clientId).toBe('client-1')
+  it('findAll returns categories ordered by order asc', async () => {
+    const result = await service.findAll()
+    expect(result[0].name).toBe('Filmes')
     expect(prisma.category.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { clientId: 'client-1' }, orderBy: { order: 'asc' } }),
+      expect.objectContaining({ orderBy: { order: 'asc' } }),
     )
   })
 

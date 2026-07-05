@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  @apply bg-black text-white overflow-hidden;
+  font-family: system-ui, sans-serif;
+  user-select: none;
+}
+
+:focus {
+  outline: none;
+}

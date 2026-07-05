@@ -11,6 +11,9 @@ import {
   ShieldCheck,
   Receipt,
   Monitor,
+  Wallet,
+  Radio,
+  FolderOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useAuth } from '@/lib/auth'
@@ -19,9 +22,12 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/monitoring', label: 'Monitoramento', icon: Monitor },
   { href: '/clients', label: 'Clientes', icon: Users },
+  { href: '/channels', label: 'Canais', icon: Radio },
+  { href: '/categories', label: 'Categorias', icon: FolderOpen },
   { href: '/subscriptions', label: 'Assinaturas', icon: Receipt },
   { href: '/plans', label: 'Planos', icon: CreditCard },
   { href: '/resellers', label: 'Revendedores', icon: UserCheck },
+  { href: '/withdrawals', label: 'Saques', icon: Wallet },
   { href: '/users', label: 'Usuários', icon: ShieldCheck },
 ]
 

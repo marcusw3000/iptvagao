@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { TrendingUp, DollarSign, Users, Clock } from 'lucide-react'
+import { TrendingUp, DollarSign, Users, Clock, Copy, Check } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 
@@ -22,6 +22,14 @@ export default function ResellerPortalPage() {
   const { resellerId } = useAuth()
   const [reseller, setReseller] = useState<ResellerDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
+
+  function copyCode(code: string) {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   useEffect(() => {
     if (!resellerId) return
@@ -52,9 +60,21 @@ export default function ResellerPortalPage() {
     <div>
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-white">{reseller.name}</h2>
-        <p className="text-gray-500 text-sm mt-1">
-          Código de indicação: <span className="font-mono text-gray-300">{reseller.referralCode}</span>
-        </p>
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6 flex items-center justify-between gap-4">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Seu código de indicação</p>
+          <p className="text-2xl font-mono font-bold text-indigo-400 tracking-widest">{reseller.referralCode}</p>
+          <p className="text-gray-600 text-xs mt-1">Compartilhe para ganhar comissão em cada pagamento</p>
+        </div>
+        <button
+          onClick={() => copyCode(reseller.referralCode)}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors shrink-0"
+        >
+          {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+          {copied ? 'Copiado!' : 'Copiar'}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

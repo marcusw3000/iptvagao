@@ -13,9 +13,9 @@ export class CategoriesController {
     return this.categoriesService.create(dto)
   }
 
-  @Get('by-client/:clientId')
-  findByClient(@Param('clientId') clientId: string) {
-    return this.categoriesService.findByClient(clientId)
+  @Get()
+  findAll() {
+    return this.categoriesService.findAll()
   }
 
   @Get(':id')

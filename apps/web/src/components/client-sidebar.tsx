@@ -7,6 +7,7 @@ import {
   MonitorPlay,
   Radio,
   CreditCard,
+  KeyRound,
   LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/cn'
@@ -17,6 +18,7 @@ const navItems = [
   { href: '/portal/devices', label: 'Dispositivos', icon: MonitorPlay },
   { href: '/portal/channels', label: 'Canais', icon: Radio },
   { href: '/portal/subscription', label: 'Assinatura', icon: CreditCard },
+  { href: '/portal/credentials', label: 'Credenciais', icon: KeyRound },
 ]
 
 export function ClientSidebar() {

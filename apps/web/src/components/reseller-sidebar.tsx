@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, TrendingUp, DollarSign, LogOut } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, DollarSign, Users, LogOut } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useAuth } from '@/lib/auth'
 
 const navItems = [
   { href: '/reseller-portal', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/reseller-portal/clients', label: 'Clientes', icon: Users },
   { href: '/reseller-portal/commissions', label: 'Comissões', icon: TrendingUp },
   { href: '/reseller-portal/withdrawals', label: 'Saques', icon: DollarSign },
 ]

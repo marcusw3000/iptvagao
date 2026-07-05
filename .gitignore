@@ -18,6 +18,18 @@ out/
 # worktrees
 .worktrees/
 
+# android (androidTvApk)
+androidTvApk/.gradle/
+androidTvApk/**/build/
+androidTvApk/local.properties
+androidTvApk/.idea/
+androidTvApk/captures/
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties
+
 # misc
 *.log
 .DS_Store

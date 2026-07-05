@@ -1,6 +1,12 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { api } from './api'
+
+const noopStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+}
 
 interface AuthState {
   token: string | null
@@ -47,30 +53,30 @@ export const useAuth = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
+      storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : noopStorage)),
       partialize: (s) => ({ token: s.token }),
-      onRehydrateStorage: () => (state, error) => {
-        if (error) {
-          console.error('[auth] rehydration failed:', error)
-          useAuth.setState({ _hasHydrated: true })
-          return
-        }
-        const isAuthenticated = !!state?.token
-        let role: string | null = null
-        let clientId: string | null = null
-        let resellerId: string | null = null
-        if (state?.token) {
-          localStorage.setItem('access_token', state.token)
-          try {
-            const payload = JSON.parse(atob(state.token.split('.')[1]))
-            role = payload.role ?? null
-            clientId = payload.clientId ?? null
-            resellerId = payload.resellerId ?? null
-          } catch {
-            // malformed token — treat as unauthenticated
-          }
-        }
-        useAuth.setState({ _hasHydrated: true, isAuthenticated, role, clientId, resellerId })
-      },
     },
   ),
 )
+
+function applyRehydratedToken(token: string | null) {
+  const isAuthenticated = !!token
+  let role: string | null = null
+  let clientId: string | null = null
+  let resellerId: string | null = null
+  if (token) {
+    localStorage.setItem('access_token', token)
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      role = payload.role ?? null
+      clientId = payload.clientId ?? null
+      resellerId = payload.resellerId ?? null
+    } catch {
+      // malformed token — treat as unauthenticated
+    }
+  }
+  useAuth.setState({ _hasHydrated: true, isAuthenticated, role, clientId, resellerId })
+}
+
+useAuth.persist.onFinishHydration((state) => applyRehydratedToken(state.token))
+if (useAuth.persist.hasHydrated()) applyRehydratedToken(useAuth.getState().token)

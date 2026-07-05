@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { ArrowLeft, CreditCard, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, CreditCard, CheckCircle, XCircle, RefreshCw, ArrowRightLeft } from 'lucide-react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/cn'
@@ -113,7 +113,11 @@ export default function SubscriptionPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [showActivate, setShowActivate] = useState(false)
   const [showAddPayment, setShowAddPayment] = useState(false)
+  const [showChangePlan, setShowChangePlan] = useState(false)
+  const [changingPlan, setChangingPlan] = useState(false)
+  const [selectedPlanId, setSelectedPlanId] = useState('')
   const [saving, setSaving] = useState(false)
+  const [generatingCheckout, setGeneratingCheckout] = useState(false)
 
   const createForm = useForm<CreateSubForm>({ resolver: zodResolver(createSubSchema) })
   const activateForm = useForm<ActivateForm>({ resolver: zodResolver(activateSchema) })
@@ -238,6 +242,41 @@ export default function SubscriptionPage() {
     }
   }
 
+  async function handleChangePlan() {
+    if (!subscription || !selectedPlanId) return
+    setChangingPlan(true)
+    try {
+      await api.patch(`/subscriptions/${subscription.id}/change-plan`, { planId: selectedPlanId })
+      setShowChangePlan(false)
+      setSelectedPlanId('')
+      await loadSubscription()
+      toast.success('Plano alterado')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } }
+      toast.error(err?.response?.data?.message ?? 'Erro ao alterar plano')
+    } finally {
+      setChangingPlan(false)
+    }
+  }
+
+  async function handleGenerateCheckout() {
+    if (!subscription) return
+    setGeneratingCheckout(true)
+    try {
+      const r = await api.post<{ paymentId: string; checkoutUrl: string }>('/payments/checkout', {
+        subscriptionId: subscription.id,
+      })
+      window.open(r.data.checkoutUrl, '_blank', 'noopener,noreferrer')
+      await loadPayments(subscription, payPage)
+      toast.success('Link de pagamento gerado')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } }
+      toast.error(err?.response?.data?.message ?? 'Erro ao gerar cobrança')
+    } finally {
+      setGeneratingCheckout(false)
+    }
+  }
+
   async function handleConfirmPayment(paymentId: string) {
     if (!subscription) return
     try {
@@ -259,7 +298,6 @@ export default function SubscriptionPage() {
           <ArrowLeft size={20} />
         </Link>
         <Link href={`/clients/${clientId}/devices`} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">Dispositivos</Link>
-        <Link href={`/clients/${clientId}/channels`} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">Canais</Link>
         <Link href={`/clients/${clientId}/credentials`} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">Credenciais</Link>
         <h2 className="text-2xl font-bold text-white">Assinatura</h2>
       </div>
@@ -303,6 +341,15 @@ export default function SubscriptionPage() {
 
               <div className="flex gap-2">
                 <button
+                  onClick={() => { setSelectedPlanId(subscription.planId); setShowChangePlan(true) }}
+                  disabled={saving}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors disabled:opacity-50"
+                  title="Trocar plano"
+                >
+                  <ArrowRightLeft size={14} />
+                  Trocar Plano
+                </button>
+                <button
                   onClick={() => setShowActivate(true)}
                   disabled={saving}
                   className="flex items-center gap-2 px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
@@ -329,12 +376,21 @@ export default function SubscriptionPage() {
           {/* Payments section */}
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold text-white">Pagamentos</h3>
-            <button
-              onClick={() => setShowAddPayment(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
-            >
-              Registrar Pagamento
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleGenerateCheckout}
+                disabled={generatingCheckout}
+                className="flex items-center gap-2 px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+              >
+                {generatingCheckout ? 'Gerando...' : 'Gerar Cobrança'}
+              </button>
+              <button
+                onClick={() => setShowAddPayment(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors"
+              >
+                Registrar Pagamento
+              </button>
+            </div>
           </div>
 
           <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
@@ -404,6 +460,39 @@ export default function SubscriptionPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Change Plan Modal */}
+      {showChangePlan && subscription && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 w-full max-w-sm">
+            <h3 className="text-lg font-bold text-white mb-4">Trocar Plano</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Novo plano *</label>
+                <select
+                  value={selectedPlanId}
+                  onChange={(e) => setSelectedPlanId(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Selecione...</option>
+                  {plans.filter((p) => p.id !== subscription.planId).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — R$ {Number(p.price).toFixed(2)}/mês
+                    </option>
+                  ))}
+                </select>
+                <p className="text-gray-500 text-xs mt-1">
+                  Atual: <span className="text-gray-400">{subscription.plan.name}</span>
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => { setShowChangePlan(false); setSelectedPlanId('') }} className="flex-1 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors">Cancelar</button>
+                <button onClick={handleChangePlan} disabled={changingPlan || !selectedPlanId} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-50">{changingPlan ? 'Salvando...' : 'Confirmar'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Create Subscription Modal */}

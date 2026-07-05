@@ -117,4 +117,22 @@ describe('SubscriptionsService', () => {
   it('activate throws NotFoundException if not found', async () => {
     await expect(service.activate('bad', { endDate: '2026-12-31' })).rejects.toThrow(NotFoundException)
   })
+
+  it('changePlan updates planId', async () => {
+    prisma.subscription.findUnique.mockResolvedValue(mockSubscription)
+    await service.changePlan('sub-1', 'plan-2')
+    expect(prisma.subscription.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { planId: 'plan-2' } }),
+    )
+  })
+
+  it('changePlan throws NotFoundException if subscription not found', async () => {
+    await expect(service.changePlan('bad', 'plan-1')).rejects.toThrow(NotFoundException)
+  })
+
+  it('changePlan throws NotFoundException if plan not found', async () => {
+    prisma.subscription.findUnique.mockResolvedValue(mockSubscription)
+    prisma.plan.findUnique.mockResolvedValue(null)
+    await expect(service.changePlan('sub-1', 'bad-plan')).rejects.toThrow(NotFoundException)
+  })
 })

@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { MonitorPlay, Key, ArrowLeft } from 'lucide-react'
+import { MonitorPlay, ArrowLeft, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/cn'
@@ -15,7 +15,6 @@ interface Device {
   id: string
   clientId: string
   name: string
-  activationCode: string
   activated: boolean
   lastSeenAt: string | null
   ipAddress: string | null
@@ -26,11 +25,6 @@ interface PaginatedDevices {
   total: number
   page: number
   totalPages: number
-}
-
-interface ActivationCode {
-  code: string
-  expiresAt: string
 }
 
 const createSchema = z.object({
@@ -45,7 +39,6 @@ export default function DevicesPage() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [activationCode, setActivationCode] = useState<ActivationCode | null>(null)
   const [page, setPage] = useState(1)
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<CreateForm>({
@@ -78,12 +71,14 @@ export default function DevicesPage() {
     }
   }
 
-  async function generateCode(deviceId: string) {
+  async function deleteDevice(deviceId: string) {
+    if (!confirm('Remover este dispositivo?')) return
     try {
-      const r = await api.post<ActivationCode>(`/devices/${deviceId}/activation-code`)
-      setActivationCode(r.data)
+      await api.delete(`/devices/${deviceId}`)
+      loadDevices(page)
+      toast.success('Dispositivo removido')
     } catch {
-      toast.error('Erro ao gerar código')
+      toast.error('Erro ao remover dispositivo')
     }
   }
 
@@ -92,12 +87,6 @@ export default function DevicesPage() {
       <div className="flex items-center gap-3 mb-6">
         <Link href="/clients" className="text-gray-400 hover:text-white transition-colors">
           <ArrowLeft size={20} />
-        </Link>
-        <Link
-          href={`/clients/${clientId}/channels`}
-          className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
-        >
-          Canais
         </Link>
         <Link
           href={`/clients/${clientId}/subscription`}
@@ -130,7 +119,6 @@ export default function DevicesPage() {
               <thead>
                 <tr className="border-b border-gray-800 text-gray-400 text-left">
                   <th className="px-4 py-3 font-medium">Nome</th>
-                  <th className="px-4 py-3 font-medium">Código</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">IP</th>
                   <th className="px-4 py-3 font-medium">Ações</th>
@@ -140,9 +128,6 @@ export default function DevicesPage() {
                 {result?.data.map((device) => (
                   <tr key={device.id} className="border-b border-gray-800 last:border-0">
                     <td className="px-4 py-3 text-white font-medium">{device.name}</td>
-                    <td className="px-4 py-3">
-                      <code className="text-indigo-400 font-mono">{device.activationCode}</code>
-                    </td>
                     <td className="px-4 py-3">
                       <span className={cn(
                         'text-xs px-2 py-1 rounded-full',
@@ -157,13 +142,15 @@ export default function DevicesPage() {
                       {device.ipAddress ?? '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => generateCode(device.id)}
-                        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
-                        title="Gerar código de ativação"
-                      >
-                        <Key size={14} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => deleteDevice(device.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-800 rounded transition-colors"
+                          title="Remover dispositivo"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -215,26 +202,6 @@ export default function DevicesPage() {
         </div>
       )}
 
-      {/* Activation Code Modal */}
-      {activationCode && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 w-full max-w-sm text-center">
-            <Key className="mx-auto mb-3 text-indigo-400" size={32} />
-            <h3 className="text-lg font-bold text-white mb-1">Código de Ativação</h3>
-            <p className="text-gray-400 text-sm mb-6">
-              Expira em: {new Date(activationCode.expiresAt).toLocaleString('pt-BR')}
-            </p>
-            <div className="bg-gray-800 rounded-lg p-6 mb-6">
-              <p className="text-4xl font-mono font-bold text-indigo-400 tracking-widest">
-                {activationCode.code}
-              </p>
-            </div>
-            <button onClick={() => setActivationCode(null)} className="w-full py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
-              Fechar
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

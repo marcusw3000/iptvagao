@@ -205,4 +205,34 @@ describe('ResellersService', () => {
     prisma.reseller.findUnique.mockResolvedValue(mockReseller)
     await expect(service.rejectWithdrawal('res-1', 'bad')).rejects.toThrow(NotFoundException)
   })
+
+  it('payWithdrawal sets status to paid', async () => {
+    prisma.reseller.findUnique.mockResolvedValue(mockReseller)
+    prisma.resellerWithdrawal.findUnique.mockResolvedValue(mockWithdrawal)
+    await service.payWithdrawal('res-1', 'wd-1')
+    expect(prisma.resellerWithdrawal.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: WithdrawalStatus.paid, processedAt: expect.any(Date) }),
+      }),
+    )
+  })
+
+  it('payWithdrawal throws NotFoundException for unknown withdrawal', async () => {
+    prisma.reseller.findUnique.mockResolvedValue(mockReseller)
+    await expect(service.payWithdrawal('res-1', 'bad')).rejects.toThrow(NotFoundException)
+  })
+
+  it('findAllWithdrawals returns paginated withdrawals across all resellers', async () => {
+    const result = await service.findAllWithdrawals({ page: 1, limit: 20 })
+    expect(result).toHaveProperty('data')
+    expect(result).toHaveProperty('total', 1)
+    expect(result).toHaveProperty('totalPages', 1)
+  })
+
+  it('findAllWithdrawals filters by status when provided', async () => {
+    await service.findAllWithdrawals({ page: 1, limit: 20, status: WithdrawalStatus.approved })
+    expect(prisma.resellerWithdrawal.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: WithdrawalStatus.approved } }),
+    )
+  })
 })
