@@ -184,6 +184,14 @@ fun PlayerScreen(channels: List<ChannelDto>, startIndex: Int, onExit: () -> Unit
                             color = IptvColors.Accent,
                             modifier = Modifier.padding(top = 4.dp),
                         )
+                        channel.epgNow?.let { program ->
+                            Text(
+                                "Agora: ${program.title}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = IptvColors.TextSecondary,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
                     }
                 }
             }

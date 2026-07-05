@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
 import { TvService } from './tv.service'
 import { ActivateDeviceDto } from './dto/activate-device.dto'
@@ -20,7 +20,7 @@ export class TvController {
   @UseGuards(DeviceAuthGuard)
   @Get('channels')
   channels(@Req() req: { device: AuthenticatedDevice }) {
-    return this.tvService.channelsForClient(req.device.clientId)
+    return this.tvService.channelsForClient(req.device.clientId, req.device.deviceId)
   }
 
   @Public()
@@ -28,5 +28,26 @@ export class TvController {
   @Post('heartbeat')
   heartbeat(@Req() req: { device: AuthenticatedDevice; ip?: string }) {
     return this.tvService.heartbeat(req.device.deviceId, req.ip)
+  }
+
+  @Public()
+  @UseGuards(DeviceAuthGuard)
+  @Post('favorites/:channelId')
+  addFavorite(@Req() req: { device: AuthenticatedDevice }, @Param('channelId') channelId: string) {
+    return this.tvService.addFavorite(req.device.deviceId, channelId)
+  }
+
+  @Public()
+  @UseGuards(DeviceAuthGuard)
+  @Delete('favorites/:channelId')
+  removeFavorite(@Req() req: { device: AuthenticatedDevice }, @Param('channelId') channelId: string) {
+    return this.tvService.removeFavorite(req.device.deviceId, channelId)
+  }
+
+  @Public()
+  @UseGuards(DeviceAuthGuard)
+  @Get('account')
+  account(@Req() req: { device: AuthenticatedDevice }) {
+    return this.tvService.accountInfo(req.device.clientId)
   }
 }

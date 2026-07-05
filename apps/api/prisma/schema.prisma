@@ -205,7 +205,8 @@ model Device {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  favorites Favorite[]
 
   @@index([clientId])
   @@map("devices")
@@ -229,18 +230,35 @@ model Channel {
   name        String
   url         String
   logoUrl     String?
+  tvgId       String?
   order       Int      @default(0)
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  category    Category? @relation(fields: [categoryId], references: [id])
+  category    Category?    @relation(fields: [categoryId], references: [id])
   plans       Plan[]
   epgPrograms EpgProgram[]
+  favorites   Favorite[]
 
   @@index([categoryId])
   @@index([active])
+  @@index([tvgId])
   @@map("channels")
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  deviceId  String
+  channelId String
+  createdAt DateTime @default(now())
+
+  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, channelId])
+  @@index([deviceId])
+  @@map("favorites")
 }
 
 model EpgProgram {
@@ -252,9 +270,10 @@ model EpgProgram {
   description String?
   createdAt   DateTime @default(now())
 
-  channel Channel @relation(fields: [channelId], references: [id])
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@index([channelId])
+  @@index([startTime, endTime])
   @@map("epg_programs")
 }
 
@@ -273,6 +292,18 @@ model Alert {
 
   @@index([clientId])
   @@map("alerts")
+}
+
+model AppRelease {
+  id          String   @id @default(cuid())
+  versionCode Int      @unique
+  versionName String
+  apkUrl      String
+  changelog   String?
+  mandatory   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@map("app_releases")
 }
 
 model AnalyticsEvent {

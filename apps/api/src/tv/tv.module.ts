@@ -6,11 +6,13 @@ import { TvService } from './tv.service'
 import { DeviceAuthGuard } from './guards/device-auth.guard'
 import { ChannelsModule } from '../channels/channels.module'
 import { DevicesModule } from '../devices/devices.module'
+import { EpgModule } from '../epg/epg.module'
 
 @Module({
   imports: [
     ChannelsModule,
     DevicesModule,
+    EpgModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

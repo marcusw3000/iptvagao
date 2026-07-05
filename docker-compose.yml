@@ -38,11 +38,28 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: 7d
       WEB_URL: ${WEB_URL:-http://localhost:3000}
+      # Aponta pro serviço epg-grabber; import agendado roda 1h depois do grabber (ver EPG_IMPORT_CRON)
+      EPG_SOURCE_URL: http://epg-grabber:3000/guide.xml
+      EPG_IMPORT_CRON: ${EPG_IMPORT_CRON:-0 6 * * *}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    profiles:
+      - full
+
+  # Gera o guia de programação (XMLTV) a partir de sites públicos, usando os mesmos
+  # tvg-id do iptv-org/iptv que já importamos no M3U — casa direto sem remapeamento.
+  epg-grabber:
+    image: ghcr.io/iptv-org/epg:master
+    ports:
+      - "3010:3000"
+    environment:
+      SITES: ${EPG_SITES:-meuguia.tv,mi.tv}
+      CRON_SCHEDULE: ${EPG_GRABBER_CRON:-0 5 * * *}
+    volumes:
+      - epg_data:/epg/public
     profiles:
       - full
 
@@ -61,3 +78,4 @@ services:
 
 volumes:
   postgres_data:
+  epg_data:

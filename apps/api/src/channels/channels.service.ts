@@ -7,6 +7,42 @@ interface M3uEntry {
   url: string
   logoUrl?: string
   group?: string
+  tvgId?: string
+}
+
+// group-title do iptv-org vem em inglês, às vezes com múltiplas tags separadas por ";"
+const CATEGORY_TRANSLATIONS: Record<string, string> = {
+  shop: 'Compras',
+  general: 'Geral',
+  movies: 'Filmes',
+  outdoor: 'Ar Livre',
+  religious: 'Religioso',
+  news: 'Notícias',
+  culture: 'Cultura',
+  kids: 'Infantil',
+  classic: 'Clássicos',
+  series: 'Séries',
+  sports: 'Esportes',
+  entertainment: 'Entretenimento',
+  education: 'Educação',
+  legislative: 'Legislativo',
+  lifestyle: 'Estilo de Vida',
+  comedy: 'Comédia',
+  animation: 'Animação',
+  documentary: 'Documentário',
+  music: 'Música',
+  family: 'Família',
+  auto: 'Automotivo',
+  cooking: 'Culinária',
+  travel: 'Viagem',
+  public: 'Público',
+}
+
+export function translateGroupName(raw: string): string {
+  return raw
+    .split(';')
+    .map((token) => CATEGORY_TRANSLATIONS[token.trim().toLowerCase()] ?? token.trim())
+    .join(' / ')
 }
 
 const CHANNEL_SELECT = {
@@ -15,6 +51,7 @@ const CHANNEL_SELECT = {
   name: true,
   url: true,
   logoUrl: true,
+  tvgId: true,
   order: true,
   active: true,
   createdAt: true,
@@ -111,14 +148,22 @@ export class ChannelsService {
         const name = line.includes(',') ? line.slice(line.lastIndexOf(',') + 1).trim() : ''
         const logo = line.match(/tvg-logo="([^"]*)"/)
         const group = line.match(/group-title="([^"]*)"/)
+        const tvgId = line.match(/tvg-id="([^"]*)"/)
         current = {
           name,
           logoUrl: logo?.[1] || undefined,
           group: group?.[1] || undefined,
+          tvgId: tvgId?.[1] || undefined,
         }
       } else if (line.startsWith('http') && current) {
         if (current.name) {
-          entries.push({ name: current.name, url: line, logoUrl: current.logoUrl, group: current.group })
+          entries.push({
+            name: current.name,
+            url: line,
+            logoUrl: current.logoUrl,
+            group: current.group,
+            tvgId: current.tvgId,
+          })
         }
         current = null
       } else if (!line.startsWith('#')) {
@@ -158,18 +203,19 @@ export class ChannelsService {
         group: e.group && STRIP_GROUPS.has(e.group) ? undefined : e.group,
       }))
 
-    // Upsert categories by group name (global)
+    // Upsert categories por nome traduzido (global) — converge com categorias PT já existentes
     const groupNames = [...new Set(entries.map((e) => e.group).filter(Boolean))].filter(
       (g) => !BLOCKED_GROUPS.has(g as string),
     ) as string[]
     const categoryMap = new Map<string, string>()
 
     for (const groupName of groupNames) {
-      const existing = await this.prisma.category.findFirst({ where: { name: groupName } })
+      const translatedName = translateGroupName(groupName)
+      const existing = await this.prisma.category.findFirst({ where: { name: translatedName } })
       if (existing) {
         categoryMap.set(groupName, existing.id)
       } else {
-        const cat = await this.prisma.category.create({ data: { name: groupName } })
+        const cat = await this.prisma.category.create({ data: { name: translatedName } })
         categoryMap.set(groupName, cat.id)
       }
     }
@@ -187,7 +233,12 @@ export class ChannelsService {
       if (existing) {
         await this.prisma.channel.update({
           where: { id: existing.id },
-          data: { name: entry.name, logoUrl: entry.logoUrl ?? null, categoryId: categoryId ?? null },
+          data: {
+            name: entry.name,
+            logoUrl: entry.logoUrl ?? null,
+            categoryId: categoryId ?? null,
+            tvgId: entry.tvgId ?? null,
+          },
         })
         updated++
       } else {
@@ -196,6 +247,7 @@ export class ChannelsService {
             name: entry.name,
             url: entry.url,
             logoUrl: entry.logoUrl,
+            tvgId: entry.tvgId,
             categoryId,
             order: i,
             plans: { connect: defaultPlanIds.map((id) => ({ id })) },

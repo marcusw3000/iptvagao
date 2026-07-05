@@ -19,7 +19,10 @@ import androidx.compose.ui.graphics.Color
 import com.iptvagao.tv.data.Api
 import com.iptvagao.tv.data.ChannelDto
 import com.iptvagao.tv.data.Session
+import com.iptvagao.tv.ui.AccountScreen
 import com.iptvagao.tv.ui.ChannelsScreen
+import com.iptvagao.tv.ui.ComingSoonScreen
+import com.iptvagao.tv.ui.HomeScreen
 import com.iptvagao.tv.ui.IptvColors
 import com.iptvagao.tv.ui.IptvTheme
 import com.iptvagao.tv.ui.PairingScreen
@@ -30,8 +33,11 @@ private const val HEARTBEAT_INTERVAL_MS = 60_000L
 
 sealed interface Screen {
     data object Pairing : Screen
-    data object Channels : Screen
-    data class Player(val channels: List<ChannelDto>, val index: Int) : Screen
+    data object Home : Screen
+    data class Channels(val favoritesOnly: Boolean = false) : Screen
+    data class Player(val channels: List<ChannelDto>, val index: Int, val favoritesOnly: Boolean = false) : Screen
+    data object Account : Screen
+    data object ComingSoon : Screen
 }
 
 class MainActivity : ComponentActivity() {
@@ -52,7 +58,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun App(session: Session) {
     var screen by remember {
-        mutableStateOf<Screen>(if (session.token == null) Screen.Pairing else Screen.Channels)
+        mutableStateOf<Screen>(if (session.token == null) Screen.Pairing else Screen.Home)
     }
     var blockedMessage by remember { mutableStateOf<String?>(null) }
 
@@ -81,16 +87,44 @@ private fun App(session: Session) {
     }
 
     when (val current = screen) {
-        is Screen.Pairing -> PairingScreen(session) { screen = Screen.Channels }
-        is Screen.Channels -> ChannelsScreen(
+        is Screen.Pairing -> PairingScreen(session) { screen = Screen.Home }
+
+        is Screen.Home -> HomeScreen(
             session = session,
-            onSessionExpired = { screen = Screen.Pairing },
-        ) { channels, index ->
-            screen = Screen.Player(channels, index)
+            onSelectLive = { screen = Screen.Channels(favoritesOnly = false) },
+            onSelectFavorites = { screen = Screen.Channels(favoritesOnly = true) },
+            onSelectVod = { screen = Screen.ComingSoon },
+            onSelectAccount = { screen = Screen.Account },
+        )
+
+        is Screen.Channels -> {
+            BackHandler { screen = Screen.Home }
+            ChannelsScreen(
+                session = session,
+                onSessionExpired = { screen = Screen.Pairing },
+                startWithFavoritesOnly = current.favoritesOnly,
+            ) { channels, index ->
+                screen = Screen.Player(channels, index, current.favoritesOnly)
+            }
         }
+
         is Screen.Player -> {
-            BackHandler { screen = Screen.Channels }
-            PlayerScreen(current.channels, current.index) { screen = Screen.Channels }
+            BackHandler { screen = Screen.Channels(current.favoritesOnly) }
+            PlayerScreen(current.channels, current.index) { screen = Screen.Channels(current.favoritesOnly) }
+        }
+
+        is Screen.Account -> {
+            BackHandler { screen = Screen.Home }
+            AccountScreen(
+                session = session,
+                onBack = { screen = Screen.Home },
+                onLogout = { screen = Screen.Pairing },
+            )
+        }
+
+        is Screen.ComingSoon -> {
+            BackHandler { screen = Screen.Home }
+            ComingSoonScreen()
         }
     }
 

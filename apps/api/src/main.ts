@@ -31,8 +31,9 @@ async function bootstrap() {
     return stream
   })
 
+  // 200MB: cobre upload de APK (app-releases), bem maior que o necessário pra logos de canal
   await app.register(fastifyMultipart, {
-    limits: { fileSize: 5 * 1024 * 1024 },
+    limits: { fileSize: 200 * 1024 * 1024 },
   })
 
   app.setGlobalPrefix('api/v1')
