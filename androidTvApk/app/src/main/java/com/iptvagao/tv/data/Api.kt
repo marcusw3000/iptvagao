@@ -206,6 +206,7 @@ interface TvApi {
         @Query("type") type: String,
         @Query("page") page: Int,
         @Query("limit") limit: Int = 24,
+        @Query("genre") genre: String? = null,
     ): VodCatalogResponse
 
     @GET("tv/vod/search")

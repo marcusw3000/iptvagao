@@ -95,6 +95,11 @@ data class VodCatalogPage(
     val hasMore: Boolean,
 )
 
+data class GenreOption(
+    val value: String?,
+    val label: String,
+)
+
 private fun mapVodItem(dto: VodCatalogItemDto): VodItem {
     return VodItem(
         id = dto.id,
@@ -113,8 +118,9 @@ private suspend fun loadVodCatalog(
     type: String,
     page: Int,
     limit: Int = 24,
+    genre: String? = null,
 ): VodCatalogPage = withContext(Dispatchers.IO) {
-    val response = Api.service.vodCatalog(bearer, type, page, limit)
+    val response = Api.service.vodCatalog(bearer, type, page, limit, genre)
     VodCatalogPage(
         items = response.items.map(::mapVodItem),
         page = response.page,
@@ -134,6 +140,45 @@ private suspend fun fetchVodStreams(bearer: String, id: String): List<VodStreamD
     Api.service.vodStreams(bearer, id).streams
 }
 
+private fun genreOptionsFor(type: String): List<GenreOption> = when (type) {
+    "series" -> listOf(
+        GenreOption(null, "Todas"),
+        GenreOption("Action", "Ação"),
+        GenreOption("Adventure", "Aventura"),
+        GenreOption("Animation", "Animação"),
+        GenreOption("Comedy", "Comédia"),
+        GenreOption("Crime", "Crime"),
+        GenreOption("Documentary", "Documentário"),
+        GenreOption("Drama", "Drama"),
+        GenreOption("Family", "Família"),
+        GenreOption("Fantasy", "Fantasia"),
+        GenreOption("History", "História"),
+        GenreOption("Horror", "Terror"),
+        GenreOption("Mystery", "Mistério"),
+        GenreOption("Romance", "Romance"),
+        GenreOption("Sci-Fi", "Ficção científica"),
+        GenreOption("Thriller", "Suspense"),
+    )
+    else -> listOf(
+        GenreOption(null, "Todas"),
+        GenreOption("Action", "Ação"),
+        GenreOption("Adventure", "Aventura"),
+        GenreOption("Animation", "Animação"),
+        GenreOption("Comedy", "Comédia"),
+        GenreOption("Crime", "Crime"),
+        GenreOption("Documentary", "Documentário"),
+        GenreOption("Drama", "Drama"),
+        GenreOption("Family", "Família"),
+        GenreOption("Fantasy", "Fantasia"),
+        GenreOption("History", "História"),
+        GenreOption("Horror", "Terror"),
+        GenreOption("Mystery", "Mistério"),
+        GenreOption("Romance", "Romance"),
+        GenreOption("Sci-Fi", "Ficção científica"),
+        GenreOption("Thriller", "Suspense"),
+    )
+}
+
 @Composable
 fun VodScreen(session: Session, onBack: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
@@ -143,6 +188,8 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("movie") }
+    var selectedGenre by remember { mutableStateOf<String?>(null) }
+    var showGenrePicker by remember { mutableStateOf(false) }
     var catalogItems by remember { mutableStateOf<List<VodItem>>(emptyList()) }
     var searchResults by remember { mutableStateOf<List<VodItem>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -157,9 +204,11 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
         "movie" to "Filmes",
         "series" to "Séries",
     )
+    val availableGenres = genreOptionsFor(selectedCategory)
+    val selectedGenreLabel = availableGenres.firstOrNull { it.value == selectedGenre }?.label ?: "Todas"
 
     suspend fun loadCatalogPage(page: Int) {
-        val currentPage = loadVodCatalog(bearer, selectedCategory, page = page)
+        val currentPage = loadVodCatalog(bearer, selectedCategory, page = page, genre = selectedGenre)
         catalogItems = currentPage.items
         catalogPage = currentPage.page
         hasMoreCatalog = currentPage.hasMore
@@ -220,6 +269,8 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
         catalogItems = emptyList()
         catalogPage = 1
         hasMoreCatalog = true
+        selectedGenre = null
+        showGenrePicker = false
         try {
             refreshCatalog()
         } catch (e: Exception) {
@@ -313,6 +364,42 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                 } else {
                     item { CategoryTabs(categories = categories, selected = selectedCategory, onSelect = { selectedCategory = it }) }
                     item { SectionHeader("Catalogo") }
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            TvPillButton(
+                                label = "Categoria: $selectedGenreLabel",
+                                selected = showGenrePicker,
+                                enabled = true,
+                                onClick = { showGenrePicker = !showGenrePicker },
+                            )
+                        }
+                    }
+                    if (showGenrePicker) {
+                        item {
+                            GenreSelectorRow(
+                                genres = availableGenres,
+                                selectedGenre = selectedGenre,
+                                onSelect = { genre ->
+                                    scope.launch {
+                                        selectedGenre = genre
+                                        showGenrePicker = false
+                                        loadingMore = true
+                                        error = null
+                                        try {
+                                            loadCatalogPage(1)
+                                        } catch (e: Exception) {
+                                            error = e.message ?: "Falha ao filtrar por categoria."
+                                        } finally {
+                                            loadingMore = false
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    }
                     item {
                         CatalogPaginationBar(
                             currentPage = catalogPage,
@@ -559,6 +646,23 @@ private fun CatalogPaginationBar(
             enabled = hasMore && !loading,
             onClick = onNext,
         )
+    }
+}
+
+@Composable
+private fun GenreSelectorRow(
+    genres: List<GenreOption>,
+    selectedGenre: String?,
+    onSelect: (String?) -> Unit,
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        items(genres) { genre ->
+            TvPillButton(
+                label = genre.label,
+                selected = genre.value == selectedGenre,
+                onClick = { onSelect(genre.value) },
+            )
+        }
     }
 }
 

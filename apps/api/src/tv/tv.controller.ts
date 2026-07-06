@@ -96,8 +96,9 @@ export class TvController {
     @Query('type') type = 'movie',
     @Query('page') page = '1',
     @Query('limit') limit = '24',
+    @Query('genre') genre?: string,
   ) {
-    return this.vodService.catalog(type, Number(page), Number(limit))
+    return this.vodService.catalog(type, Number(page), Number(limit), genre)
   }
 
   @Public()

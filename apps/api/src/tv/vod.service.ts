@@ -139,6 +139,12 @@ export class VodService {
     return type === 'series' ? 'series' : 'movie'
   }
 
+  private normalizeGenre(genre?: string): string | undefined {
+    const normalizedGenre = genre?.trim()
+    if (!normalizedGenre || normalizedGenre.toLowerCase() === 'all') return undefined
+    return normalizedGenre
+  }
+
   private async translateTitle(title: string): Promise<string | undefined> {
     const normalizedTitle = title.trim()
     if (!normalizedTitle) return undefined
@@ -227,15 +233,19 @@ export class VodService {
     return this.fallbackCatalog[type]
   }
 
-  async catalog(type = 'movie', page = 1, limit = 24): Promise<VodCatalogPageDto> {
+  async catalog(type = 'movie', page = 1, limit = 24, genre?: string): Promise<VodCatalogPageDto> {
     const normalizedType = this.normalizeType(type)
+    const normalizedGenre = this.normalizeGenre(genre)
     const safePage = Math.max(1, page)
     const safeLimit = Math.min(50, Math.max(1, limit))
     const skip = (safePage - 1) * safeLimit
 
     try {
-      const path =
-        skip > 0 ? `/catalog/${normalizedType}/top/skip=${skip}.json` : `/catalog/${normalizedType}/top.json`
+      const path = normalizedGenre
+        ? `/catalog/${normalizedType}/top/genre=${encodeURIComponent(normalizedGenre)}.json`
+        : skip > 0
+          ? `/catalog/${normalizedType}/top/skip=${skip}.json`
+          : `/catalog/${normalizedType}/top.json`
       const response = await this.fetchJson<CinemetaCatalogResponse>(path)
       const metas = response.metas ?? []
       if (metas.length === 0) {
@@ -247,13 +257,13 @@ export class VodService {
         }
       }
 
-      const slicedMetas = metas.slice(0, safeLimit)
+      const slicedMetas = normalizedGenre ? metas.slice(skip, skip + safeLimit) : metas.slice(0, safeLimit)
 
       return {
         items: await Promise.all(slicedMetas.map((meta) => this.enrichWithTranslation(this.mapMeta(meta, normalizedType)))),
         page: safePage,
         limit: safeLimit,
-        hasMore: response.hasMore ?? metas.length >= safeLimit,
+        hasMore: normalizedGenre ? skip + safeLimit < metas.length : response.hasMore ?? metas.length >= safeLimit,
       }
     } catch {
       return {
