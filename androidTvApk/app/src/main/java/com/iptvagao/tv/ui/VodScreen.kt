@@ -47,6 +47,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -197,9 +199,15 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
     var streamItems by remember { mutableStateOf<List<VodStreamDto>>(emptyList()) }
     var streamLoading by remember { mutableStateOf(false) }
     var streamError by remember { mutableStateOf<String?>(null) }
+    var initialFocusRequested by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val bearer = session.bearer ?: ""
+    val movieTabFocusRequester = remember { FocusRequester() }
+    val seriesTabFocusRequester = remember { FocusRequester() }
+    val genreButtonFocusRequester = remember { FocusRequester() }
+    val previousPageFocusRequester = remember { FocusRequester() }
+    val nextPageFocusRequester = remember { FocusRequester() }
     val categories = listOf(
         "movie" to "Filmes",
         "series" to "Séries",
@@ -259,6 +267,17 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
             error = e.message ?: "Falha ao carregar catalogo."
         } finally {
             loading = false
+        }
+    }
+
+    LaunchedEffect(loading, error, searching, showGenrePicker) {
+        if (!initialFocusRequested && !loading && error == null && !searching && !showGenrePicker) {
+            if (selectedCategory == "series") {
+                seriesTabFocusRequester.requestFocus()
+            } else {
+                movieTabFocusRequester.requestFocus()
+            }
+            initialFocusRequested = true
         }
     }
 
@@ -362,7 +381,15 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                         }
                     }
                 } else {
-                    item { CategoryTabs(categories = categories, selected = selectedCategory, onSelect = { selectedCategory = it }) }
+                    item {
+                        CategoryTabs(
+                            categories = categories,
+                            selected = selectedCategory,
+                            movieFocusRequester = movieTabFocusRequester,
+                            seriesFocusRequester = seriesTabFocusRequester,
+                            onSelect = { selectedCategory = it },
+                        )
+                    }
                     item { SectionHeader("Catalogo") }
                     item {
                         Box(
@@ -374,6 +401,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                                 selected = showGenrePicker,
                                 enabled = true,
                                 onClick = { showGenrePicker = !showGenrePicker },
+                                modifier = Modifier.focusRequester(genreButtonFocusRequester),
                             )
                         }
                     }
@@ -394,6 +422,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                                             error = e.message ?: "Falha ao filtrar por categoria."
                                         } finally {
                                             loadingMore = false
+                                            genreButtonFocusRequester.requestFocus()
                                         }
                                     }
                                 },
@@ -405,6 +434,8 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                             currentPage = catalogPage,
                             hasMore = hasMoreCatalog,
                             loading = loadingMore,
+                            previousFocusRequester = previousPageFocusRequester,
+                            nextFocusRequester = nextPageFocusRequester,
                             onPrevious = {
                                 scope.launch { goToPreviousCatalogPage() }
                             },
@@ -592,14 +623,22 @@ private fun ScreenHeader(title: String, subtitle: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CategoryTabs(categories: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+private fun CategoryTabs(
+    categories: List<Pair<String, String>>,
+    selected: String,
+    movieFocusRequester: FocusRequester,
+    seriesFocusRequester: FocusRequester,
+    onSelect: (String) -> Unit,
+) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         categories.forEach { (key, label) ->
             TvPillButton(
                 label = label,
                 selected = selected == key,
                 onClick = { onSelect(key) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(if (key == "series") seriesFocusRequester else movieFocusRequester),
             )
         }
     }
@@ -621,6 +660,8 @@ private fun CatalogPaginationBar(
     currentPage: Int,
     hasMore: Boolean,
     loading: Boolean,
+    previousFocusRequester: FocusRequester,
+    nextFocusRequester: FocusRequester,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
@@ -634,6 +675,7 @@ private fun CatalogPaginationBar(
             selected = false,
             enabled = currentPage > 1 && !loading,
             onClick = onPrevious,
+            modifier = Modifier.focusRequester(previousFocusRequester),
         )
         Text(
             "Página $currentPage",
@@ -645,6 +687,7 @@ private fun CatalogPaginationBar(
             selected = false,
             enabled = hasMore && !loading,
             onClick = onNext,
+            modifier = Modifier.focusRequester(nextFocusRequester),
         )
     }
 }
@@ -715,7 +758,9 @@ private fun TvPillButton(
             label,
             color = when {
                 !enabled -> IptvColors.TextSecondary.copy(alpha = 0.7f)
-                selected -> Color.Black
+                selected && focused -> Color.Black
+                selected -> Color(0xFF1A1330)
+                focused -> Color.White
                 else -> IptvColors.TextSecondary
             },
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),

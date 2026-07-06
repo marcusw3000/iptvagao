@@ -10,10 +10,15 @@ set "ANDROID_DIR=%ROOT%androidTvApk"
 set "APK_PATH=%ANDROID_DIR%\app\build\outputs\apk\debug\app-debug.apk"
 set "ADB=%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"
 set "EMULATOR=%LOCALAPPDATA%\Android\Sdk\emulator\emulator.exe"
-set "GRADLE=C:\tmp\gradle-8.7-full\gradle-8.7\bin\gradle.bat"
+set "GRADLEW=%ANDROID_DIR%\gradlew.bat"
 set "APP_ID=com.iptvagao.tv"
 set "ACTIVITY=%APP_ID%/.MainActivity"
 set "AVD_NAME=tv_test"
+set "API_ENV=%~1"
+if "%API_ENV%"=="" set "API_ENV=local"
+set "API_BASE_URL=%~2"
+set "API_BASE_URL_ARG="
+if not "%API_BASE_URL%"=="" set "API_BASE_URL_ARG=-PapiBaseUrl=%API_BASE_URL%"
 
 where pnpm >nul 2>nul
 if errorlevel 1 (
@@ -26,8 +31,13 @@ if errorlevel 1 (
 echo Iniciando ambiente local do projeto...
 echo.
 
-call :ensure_api
-if errorlevel 1 goto :fail
+if /i "%API_ENV%"=="local" (
+    call :ensure_api
+    if errorlevel 1 goto :fail
+) else (
+    echo [1/4] Ambiente remoto selecionado: %API_ENV%
+    echo      URL sobrescrita: %API_BASE_URL%
+)
 
 call :ensure_web "IPTVagao Admin" "%WEB_DIR%" 3000
 call :ensure_web "IPTVagao TV Web" "%TV_WEB_DIR%" 3002
@@ -43,14 +53,16 @@ start "" http://localhost:3002
 
 echo.
 echo Ambiente iniciado.
-echo   API local:    http://localhost:3001/api/v1
+echo   Ambiente:     %API_ENV%
+if /i "%API_ENV%"=="local" echo   API local:    http://localhost:3001/api/v1
 echo   Admin web:    http://localhost:3000
 echo   TV app web:   http://localhost:3002
 echo   APK Android:  instalado e aberto no emulador %AVD_NAME%
 echo.
 echo Observacoes:
-echo   - O APK Android TV em teste local usa http://10.0.2.2:3001/api/v1
-echo   - Mantenha a janela da API aberta enquanto testar o app
+echo   - Use start.bat staging ou start.bat prod para backend remoto
+if /i "%API_ENV%"=="local" echo   - O APK Android TV em teste local usa http://10.0.2.2:3001/api/v1
+if /i "%API_ENV%"=="local" echo   - Mantenha a janela da API aberta enquanto testar o app
 echo.
 exit /b 0
 
@@ -103,7 +115,7 @@ for /f "skip=1 tokens=1" %%D in ('"%ADB%" devices') do (
 
 if not defined DEVICE_ID (
     echo      Nenhum device ativo. Iniciando AVD %AVD_NAME%...
-    start "Android TV Emulator" "%EMULATOR%" -avd %AVD_NAME%
+    start "Android TV Emulator" "%EMULATOR%" -avd %AVD_NAME% -no-snapshot-load -no-boot-anim -gpu swiftshader_indirect
     echo      Aguardando device aparecer...
     "%ADB%" wait-for-device >nul 2>nul
 ) else (
@@ -121,12 +133,15 @@ exit /b 0
 
 :build_install_launch
 echo [3/4] Gerando APK debug
-if not exist "%GRADLE%" (
-    echo      Gradle nao encontrado em %GRADLE%
+if not exist "%GRADLEW%" (
+    echo      gradlew.bat nao encontrado em %GRADLEW%
     exit /b 1
 )
-call "%GRADLE%" assembleDebug
-if errorlevel 1 (
+pushd "%ANDROID_DIR%"
+call "%GRADLEW%" assembleDebug -PapiEnv=%API_ENV% %API_BASE_URL_ARG%
+set "BUILD_EXIT=%ERRORLEVEL%"
+popd
+if not "%BUILD_EXIT%"=="0" (
     echo      Falha ao gerar o APK.
     exit /b 1
 )

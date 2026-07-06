@@ -16,7 +16,7 @@ const mockDevice = {
 }
 
 const mockActivatedDevice = { ...mockDevice, activated: true }
-const mockSubscription = { plan: { type: 'basic' } }
+const mockSubscription = { status: 'active', plan: { maxDevices: 1 } }
 
 describe('DevicesService', () => {
   let service: DevicesService
@@ -90,7 +90,7 @@ describe('DevicesService', () => {
     await expect(service.heartbeat('device-1')).rejects.toThrow(ForbiddenException)
   })
 
-  it('heartbeat throws ForbiddenException when concurrent limit reached (basic=1)', async () => {
+  it('heartbeat throws ForbiddenException when concurrent limit reached', async () => {
     prisma.device.findUnique.mockResolvedValue(mockActivatedDevice)
     prisma.device.count.mockResolvedValue(1)
     await expect(service.heartbeat('device-1')).rejects.toThrow(ForbiddenException)
@@ -106,11 +106,19 @@ describe('DevicesService', () => {
     expect(result.activated).toBe(true)
   })
 
-  it('heartbeat allows 4 concurrent TVs on premium plan', async () => {
+  it('heartbeat allows up to plan.maxDevices concurrent TVs', async () => {
     prisma.device.findUnique.mockResolvedValue(mockActivatedDevice)
-    prisma.subscription.findUnique.mockResolvedValue({ plan: { type: 'premium' } })
+    prisma.subscription.findUnique.mockResolvedValue({ status: 'active', plan: { maxDevices: 4 } })
     prisma.device.count.mockResolvedValue(3)
     await expect(service.heartbeat('device-1')).resolves.toBeDefined()
+  })
+
+  it('heartbeat blocks suspended subscriptions before updating device', async () => {
+    prisma.device.findUnique.mockResolvedValue(mockActivatedDevice)
+    prisma.subscription.findUnique.mockResolvedValue({ status: 'suspended', plan: { maxDevices: 4 } })
+
+    await expect(service.heartbeat('device-1')).rejects.toThrow(ForbiddenException)
+    expect(prisma.device.update).not.toHaveBeenCalled()
   })
 
   it('findAllForMonitoring returns data with online flag', async () => {

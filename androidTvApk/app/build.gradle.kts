@@ -4,6 +4,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val apiEnv = (project.findProperty("apiEnv") as String? ?: "local").trim().lowercase()
+val apiBaseUrl = (project.findProperty("apiBaseUrl") as String?)?.trim()?.takeIf { it.isNotEmpty() }
+    ?: when (apiEnv) {
+        "staging" -> (project.findProperty("apiBaseUrlStaging") as String? ?: "https://staging.example.com/api/v1")
+        "prod" -> (project.findProperty("apiBaseUrlProd") as String? ?: "https://api.example.com/api/v1")
+        else -> (project.findProperty("apiBaseUrlLocal") as String? ?: "http://10.0.2.2:3001/api/v1")
+    }
+
 android {
     namespace = "com.iptvagao.tv"
     compileSdk = 35
@@ -15,7 +23,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        buildConfigField("String", "API_BASE_URL", "\"${project.property("apiBaseUrl")}\"")
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        buildConfigField("String", "API_ENVIRONMENT", "\"$apiEnv\"")
     }
 
     buildTypes {
@@ -52,6 +61,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Player
     implementation("androidx.media3:media3-exoplayer:1.4.1")

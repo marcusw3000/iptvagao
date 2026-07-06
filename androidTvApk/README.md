@@ -20,14 +20,12 @@ App nativo (Kotlin + Jetpack Compose + Media3/ExoPlayer) que consome a API NestJ
 
 ## Build
 
-Pré-requisitos: JDK 17 + Android Studio (ou Android SDK + Gradle 8.7).
+Pré-requisitos: JDK 17 + Android Studio (ou Android SDK). O projeto já inclui Gradle Wrapper alinhado com o AGP.
 
 ```bash
-# primeira vez (gera o gradle wrapper jar, que não é versionado):
+# build debug
 cd androidTvApk
-gradle wrapper   # ou abra a pasta no Android Studio, que resolve sozinho
 
-# debug APK
 ./gradlew assembleDebug
 # saída: app/build/outputs/apk/debug/app-debug.apk
 
@@ -37,14 +35,24 @@ gradle wrapper   # ou abra a pasta no Android Studio, que resolve sozinho
 
 ### URL da API
 
-Padrão: `http://10.0.2.2:3001/api/v1` (emulador → localhost da máquina).
-Para device físico/produção:
+O app resolve o backend por ambiente:
+
+- `local` → `apiBaseUrlLocal`
+- `staging` → `apiBaseUrlStaging`
+- `prod` → `apiBaseUrlProd`
+
+Padrão em desenvolvimento: `http://10.0.2.2:3001/api/v1` (emulador → localhost da máquina).
+
+Exemplos:
 
 ```bash
+./gradlew assembleDebug -PapiEnv=local
+./gradlew assembleDebug -PapiEnv=staging
+./gradlew assembleDebug -PapiEnv=prod
 ./gradlew assembleDebug -PapiBaseUrl=http://192.168.0.10:3001/api/v1
 ```
 
-ou edite `apiBaseUrl` em `gradle.properties`.
+Os valores padrão ficam em `gradle.properties`, e `-PapiBaseUrl=...` sobrescreve qualquer ambiente.
 
 ## Controles (controle remoto)
 
@@ -76,4 +84,4 @@ Android Studio → Device Manager → novo device categoria **TV** (ex: Televisi
 - Ícone/banner são placeholders — trocar por arte real antes de publicar
 - Release signing não configurado (`signingConfigs`)
 - Streams HTTP exigem `usesCleartextTraffic=true` (já setado); se todos os streams forem HTTPS, remover
-- Token de device fica em SharedPreferences simples; para produção, migrar para EncryptedSharedPreferences (requer minSdk 23)
+- Em Android abaixo da API 23, a sessão ainda cai no fallback de `SharedPreferences` simples

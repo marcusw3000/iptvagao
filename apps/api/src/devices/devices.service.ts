@@ -2,7 +2,6 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateDeviceDto } from './dto/create-device.dto'
 
-const CONCURRENT_LIMITS: Record<string, number> = { basic: 1, premium: 4 }
 const ONLINE_THRESHOLD_MS = 5 * 60 * 1000
 
 const DEVICE_SELECT = {
@@ -71,11 +70,22 @@ export class DevicesService {
 
     const subscription = await this.prisma.subscription.findUnique({
       where: { clientId: device.clientId },
-      select: { plan: { select: { type: true } } },
+      select: {
+        status: true,
+        plan: {
+          select: {
+            maxDevices: true,
+          },
+        },
+      },
     })
 
     if (subscription) {
-      const limit = CONCURRENT_LIMITS[subscription.plan.type] ?? 1
+      if (subscription.status === 'suspended' || subscription.status === 'cancelled') {
+        throw new ForbiddenException('Assinatura suspensa ou cancelada')
+      }
+
+      const limit = Math.max(subscription.plan.maxDevices ?? 1, 1)
       const onlineThreshold = new Date(Date.now() - ONLINE_THRESHOLD_MS)
       const onlineCount = await this.prisma.device.count({
         where: {
