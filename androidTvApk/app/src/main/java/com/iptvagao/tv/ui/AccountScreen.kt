@@ -81,20 +81,20 @@ fun AccountScreen(session: Session, onBack: () -> Unit, onLogout: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(IptvColors.Background, IptvColors.BackgroundAlt)))
-            .padding(48.dp)
+            .padding(28.dp)
             // Segurança: em telas menores/mais densas o conteúdo pode não caber na altura visível
             .verticalScroll(rememberScrollState()),
     ) {
-        Text("Conta", style = MaterialTheme.typography.headlineLarge, color = IptvColors.TextPrimary)
+        Text("Conta", style = MaterialTheme.typography.headlineMedium, color = IptvColors.TextPrimary)
 
         when {
             error != null -> Text(
                 error!!,
                 style = MaterialTheme.typography.bodyLarge,
                 color = IptvColors.TextSecondary,
-                modifier = Modifier.padding(top = 40.dp),
+                modifier = Modifier.padding(top = 20.dp),
             )
-            account == null -> Box(Modifier.padding(top = 40.dp)) {
+            account == null -> Box(Modifier.padding(top = 20.dp)) {
                 CircularProgressIndicator(color = IptvColors.Accent)
             }
             else -> AccountDetails(account!!, session.deviceName, onLogout = {
@@ -107,9 +107,9 @@ fun AccountScreen(session: Session, onBack: () -> Unit, onLogout: () -> Unit) {
 
 @Composable
 private fun AccountDetails(account: AccountResponse, deviceName: String?, onLogout: () -> Unit) {
-    Column(modifier = Modifier.padding(top = 40.dp).width(520.dp)) {
+    Column(modifier = Modifier.padding(top = 36.dp).width(520.dp)) {
         Surface(shape = RoundedCornerShape(16.dp), color = IptvColors.Surface) {
-            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SectionLabel("Dispositivo")
                 InfoRow("Cliente", account.clientName)
                 InfoRow("Dispositivo", deviceName ?: "—", isLast = true)
@@ -129,7 +129,7 @@ private fun AccountDetails(account: AccountResponse, deviceName: String?, onLogo
 
 @Composable
 private fun SectionLabel(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp)) {
         Box(
             Modifier.size(width = 4.dp, height = 16.dp).clip(RoundedCornerShape(2.dp)).background(IptvColors.Accent),
         )
@@ -144,7 +144,7 @@ private fun SectionLabel(text: String) {
 
 @Composable
 private fun InfoRow(label: String, value: String, isLast: Boolean = false) {
-    Column(modifier = Modifier.padding(horizontal = 22.dp).padding(bottom = if (isLast) 16.dp else 12.dp)) {
+    Column(modifier = Modifier.padding(horizontal = 22.dp).padding(bottom = if (isLast) 10.dp else 8.dp)) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = IptvColors.TextSecondary)
         Text(value, style = MaterialTheme.typography.titleLarge, color = IptvColors.TextPrimary, modifier = Modifier.padding(top = 2.dp))
     }
@@ -163,7 +163,7 @@ private fun LogoutButton(onClick: () -> Unit) {
             contentColor = Color(0xFFF87171),
         ),
         modifier = Modifier
-            .padding(top = 32.dp)
+            .padding(top = 16.dp)
             .fillMaxWidth()
             .border(
                 width = if (focused) 2.dp else 0.dp,

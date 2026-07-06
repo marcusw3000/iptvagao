@@ -104,43 +104,43 @@ fun HomeScreen(
         ) {
             Text(
                 "Olá, ${session.deviceName ?: "TV"}",
-                style = MaterialTheme.typography.headlineLarge,
+                style = MaterialTheme.typography.headlineMedium,
                 color = IptvColors.TextPrimary,
-                modifier = Modifier.padding(top = 48.dp),
+                modifier = Modifier.padding(top = 28.dp),
             )
             Text(
                 "O que vamos assistir?",
                 style = MaterialTheme.typography.bodyLarge,
                 color = IptvColors.TextSecondary,
-                modifier = Modifier.padding(top = 4.dp, bottom = 40.dp),
+                modifier = Modifier.padding(top = 4.dp, bottom = 20.dp),
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 HomeTile(
                     title = "TV ao Vivo",
                     icon = Icons.Filled.Tv,
-                    modifier = Modifier.size(width = 280.dp, height = 320.dp),
+                    modifier = Modifier.size(width = 260.dp, height = 260.dp),
                     autoFocus = true,
                     onClick = onSelectLive,
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     HomeTile(
                         title = "Favoritos",
                         icon = Icons.Filled.Star,
-                        modifier = Modifier.size(width = 280.dp, height = 150.dp),
+                        modifier = Modifier.size(width = 260.dp, height = 122.dp),
                         onClick = onSelectFavorites,
                     )
                     HomeTile(
                         title = "Filmes & Séries",
                         icon = Icons.Filled.Movie,
-                        modifier = Modifier.size(width = 280.dp, height = 150.dp),
+                        modifier = Modifier.size(width = 260.dp, height = 122.dp),
                         onClick = onSelectVod,
                     )
                 }
                 HomeTile(
                     title = "Conta",
                     icon = Icons.Filled.AccountCircle,
-                    modifier = Modifier.size(width = 280.dp, height = 320.dp),
+                    modifier = Modifier.size(width = 260.dp, height = 260.dp),
                     onClick = onSelectAccount,
                 )
             }
@@ -155,7 +155,7 @@ fun HomeScreen(
                 )
             }
 
-            Box(Modifier.padding(bottom = 32.dp))
+            Box(Modifier.padding(bottom = 20.dp))
         }
     }
 }
@@ -171,10 +171,10 @@ private fun UpdateBanner(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .padding(top = 32.dp)
+            .padding(top = 20.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(IptvColors.Surface)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
