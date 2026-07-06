@@ -10,6 +10,7 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 // --- DTOs ---
@@ -76,6 +77,81 @@ data class AppReleaseDto(
     val mandatory: Boolean,
 )
 
+data class TorrentioManifestResponse(
+    val id: String,
+    val version: String,
+    val name: String,
+    val description: String,
+    val background: String?,
+    val logo: String?,
+    val catalogs: List<Any>?,
+    val resources: List<Any>?,
+    val types: List<String>?,
+)
+
+data class TorrentioCatalogItem(
+    val id: String,
+    val title: String,
+    val type: String,
+    val posterUrl: String?,
+    val description: String?,
+    val year: String?,
+    val imdbId: String,
+)
+
+data class TorrentioStreamItem(
+    val name: String?,
+    val title: String?,
+    val infoHash: String?,
+    val fileIdx: Int?,
+    val behaviorHints: Map<String, String>?,
+)
+
+data class TorrentioStreamResponse(
+    val streams: List<TorrentioStreamItem>,
+)
+
+data class VodCatalogItemDto(
+    val id: String,
+    val title: String,
+    val translatedTitle: String?,
+    val type: String,
+    val posterUrl: String?,
+    val description: String?,
+    val year: String?,
+    val genres: List<String>,
+)
+
+data class VodCatalogResponse(
+    val items: List<VodCatalogItemDto>,
+    val page: Int,
+    val limit: Int,
+    val hasMore: Boolean,
+)
+
+data class VodStreamDto(
+    val id: String,
+    val label: String,
+    val url: String,
+)
+
+data class VodItemDetailsDto(
+    val id: String,
+    val title: String,
+    val translatedTitle: String?,
+    val type: String,
+    val posterUrl: String?,
+    val backdropUrl: String?,
+    val description: String?,
+    val year: String?,
+    val genres: List<String>,
+    val streams: List<VodStreamDto>,
+)
+
+data class VodStreamsResponse(
+    val streams: List<VodStreamDto>,
+)
+
 // --- Retrofit service ---
 
 interface TvApi {
@@ -99,6 +175,56 @@ interface TvApi {
 
     @GET("app-releases/latest")
     suspend fun latestRelease(): AppReleaseDto
+
+    @GET("tv/torrentio/manifest")
+    suspend fun torrentioManifest(@Header("Authorization") bearer: String): TorrentioManifestResponse
+
+    @GET("tv/torrentio/catalog")
+    suspend fun torrentioCatalog(
+        @Header("Authorization") bearer: String,
+        @Query("type") type: String,
+        @Query("page") page: Int = 1,
+    ): List<TorrentioCatalogItem>
+
+    @GET("tv/torrentio/search")
+    suspend fun torrentioSearch(
+        @Header("Authorization") bearer: String,
+        @Query("q") query: String,
+    ): List<TorrentioCatalogItem>
+
+    @GET("tv/torrentio/stream")
+    suspend fun torrentioStream(
+        @Header("Authorization") bearer: String,
+        @Query("type") type: String,
+        @Query("id") id: String,
+        @Query("quality") quality: String? = null,
+    ): TorrentioStreamResponse
+
+    @GET("tv/vod/catalog")
+    suspend fun vodCatalog(
+        @Header("Authorization") bearer: String,
+        @Query("type") type: String,
+        @Query("page") page: Int,
+        @Query("limit") limit: Int = 24,
+    ): VodCatalogResponse
+
+    @GET("tv/vod/search")
+    suspend fun vodSearch(
+        @Header("Authorization") bearer: String,
+        @Query("q") query: String,
+    ): List<VodCatalogItemDto>
+
+    @GET("tv/vod/item/{id}")
+    suspend fun vodItem(
+        @Header("Authorization") bearer: String,
+        @Path("id") id: String,
+    ): VodItemDetailsDto
+
+    @GET("tv/vod/streams/{id}")
+    suspend fun vodStreams(
+        @Header("Authorization") bearer: String,
+        @Path("id") id: String,
+    ): VodStreamsResponse
 }
 
 object Api {
