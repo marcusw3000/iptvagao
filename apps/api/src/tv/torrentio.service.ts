@@ -16,6 +16,7 @@ export interface TorrentioManifestResponse {
 export interface TorrentioStreamItem {
   name?: string
   title?: string
+  url?: string
   infoHash?: string
   fileIdx?: number
   behaviorHints?: { filename?: string; bingeGroup?: string }
@@ -37,8 +38,8 @@ export interface VodItemDto {
 
 @Injectable()
 export class TorrentioService {
-  private readonly torrentioManifestUrl = 'https://5db836ec3ef8-thepiratebay-ctl.baby-beamup.club/manifest.json'
-  private readonly torrentioCatalogBase = 'https://5db836ec3ef8-thepiratebay-ctl.baby-beamup.club'
+  private readonly torrentioManifestUrl = 'https://torrentio.strem.fun/lite/manifest.json'
+  private readonly torrentioBase = 'https://torrentio.strem.fun/lite'
   private readonly userAgent = 'Mozilla/5.0 (compatible; iptvagao/1.0)'
 
   private async fetchJson<T>(url: string): Promise<T> {
@@ -64,15 +65,16 @@ export class TorrentioService {
     if (!type || !id) {
       throw new BadRequestException('Type e id são obrigatórios para stream Torrentio')
     }
-    const url = new URL(`${this.torrentioCatalogBase}/stream/${type}/${id}.json`)
+    const encodedId = encodeURIComponent(id)
+    const url = new URL(`${this.torrentioBase}/stream/${type}/${encodedId}.json`)
     if (quality) url.searchParams.set('quality', quality)
     return this.fetchJson<TorrentioStreamResponse>(url.toString())
   }
 
   async catalog(type?: string, page = 1): Promise<VodItemDto[]> {
     const currentPage = Math.max(1, page)
-    const catalogMovies = `${this.torrentioCatalogBase}/catalog/Movies/${currentPage}.json`
-    const catalogSeries = `${this.torrentioCatalogBase}/catalog/tpbctlg-series/${currentPage}.json`
+    const catalogMovies = `${this.torrentioBase}/catalog/Movies/${currentPage}.json`
+    const catalogSeries = `${this.torrentioBase}/catalog/tpbctlg-series/${currentPage}.json`
 
     const mapMeta = (item: any, defaultType: 'movie' | 'series'): VodItemDto => ({
       id: item.id || item.name || 'unknown',
@@ -111,11 +113,11 @@ export class TorrentioService {
     const normalized = query.trim()
 
     const movieResponse = await this.fetchJson<any>(
-      `${this.torrentioCatalogBase}/catalog/Movies/1.json?search=${encodeURIComponent(normalized)}`,
+      `${this.torrentioBase}/catalog/Movies/1.json?search=${encodeURIComponent(normalized)}`,
     ).catch(() => ({ metas: [] }))
 
     const seriesResponse = await this.fetchJson<any>(
-      `${this.torrentioCatalogBase}/catalog/TV%20shows/1.json?search=${encodeURIComponent(normalized)}`,
+      `${this.torrentioBase}/catalog/TV%20shows/1.json?search=${encodeURIComponent(normalized)}`,
     ).catch(() => ({ metas: [] }))
 
     const movieItems = (movieResponse.metas ?? []).map((item: any) => ({

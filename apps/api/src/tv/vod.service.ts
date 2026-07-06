@@ -1,4 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common'
+import { TorrentioService, TorrentioStreamItem } from './torrentio.service'
 
 export interface VodCatalogItemDto {
   id: string
@@ -22,6 +23,7 @@ export interface VodStreamDto {
   id: string
   label: string
   url: string
+  source?: string
 }
 
 export interface VodItemDetailsDto extends VodCatalogItemDto {
@@ -62,6 +64,11 @@ interface CinemetaMetaResponse {
 export class VodService {
   private readonly baseUrl = 'https://v3-cinemeta.strem.io'
   private readonly userAgent = 'Mozilla/5.0 (compatible; iptvagao/1.0)'
+  private readonly torrentioService: TorrentioService
+
+  constructor(torrentioService: TorrentioService) {
+    this.torrentioService = torrentioService
+  }
   private readonly translationCache = new Map<string, string | undefined>()
   private readonly knownTitleTranslations = new Map<string, string>([
     ['The Matrix', 'Matrix'],
@@ -214,19 +221,20 @@ export class VodService {
   private mapTrailers(meta?: CinemetaMetaDetails): VodStreamDto[] {
     if (!meta?.trailerStreams?.length) return []
 
-    return meta.trailerStreams
-      .map((stream, index) => {
-        if (stream.source === 'youtube' && stream.ytId) {
-          return {
-            id: `${meta.id}-trailer-${index + 1}`,
-            label: `Trailer ${index + 1}`,
-            url: `https://www.youtube.com/watch?v=${stream.ytId}`,
-          }
+    const trailers: Array<VodStreamDto | null> = meta.trailerStreams.map((stream, index) => {
+      if (stream.source === 'youtube' && stream.ytId) {
+        return {
+          id: `${meta.id}-trailer-${index + 1}`,
+          label: `Trailer ${index + 1}`,
+          url: `https://www.youtube.com/watch?v=${stream.ytId}`,
+          source: 'youtube',
         }
+      }
 
-        return null
-      })
-      .filter((item): item is VodStreamDto => item !== null)
+      return null
+    })
+
+    return trailers.filter((item): item is VodStreamDto => item !== null)
   }
 
   private fallbackByType(type: 'movie' | 'series'): VodCatalogItemDto[] {
@@ -338,8 +346,155 @@ export class VodService {
     }
   }
 
+  private readonly torrentTrackers = [
+    'udp://tracker.openbittorrent.com:80/announce',
+    'udp://tracker.opentrackr.org:1337/announce',
+    'udp://tracker.leechers-paradise.org:6969/announce',
+    'udp://tracker.coppersurfer.tk:6969/announce',
+  ]
+
+  private buildTorrentUrl(stream: TorrentioStreamItem): string {
+    if (stream.url) return stream.url
+
+    const infoHash = stream.infoHash?.trim()
+    if (!infoHash) return ''
+
+    const filename = stream.behaviorHints?.filename || stream.title || stream.name || 'torrent'
+    const params = new URLSearchParams({ xt: `urn:btih:${infoHash}`, dn: filename })
+    for (const tracker of this.torrentTrackers) {
+      params.append('tr', tracker)
+    }
+
+    return `magnet:?${params.toString()}`
+  }
+
+  private extractStreamSource(stream: TorrentioStreamItem): string | undefined {
+    const titleLines = stream.title
+      ?.split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+    const sourceLine = titleLines?.find((line) => line.includes('⚙'))
+    if (sourceLine) {
+      const normalized = sourceLine.replace(/^.*⚙️?\s*/, '').trim()
+      if (normalized) return normalized
+    }
+
+    const addonName = stream.name
+      ?.split(/\r?\n/)[0]
+      ?.trim()
+
+    return addonName || undefined
+  }
+
+  private async searchTorrentioCandidates(item: VodItemDetailsDto): Promise<Array<{ id: string; type: 'movie' | 'series' }>> {
+    const queries = new Set<string>()
+    queries.add(item.title)
+    if (item.translatedTitle) queries.add(item.translatedTitle)
+    if (item.id) queries.add(item.id)
+
+    const found = new Map<string, 'movie' | 'series'>()
+
+    for (const query of queries) {
+      try {
+        const results = await this.torrentioService.search(query)
+        for (const result of results) {
+          const type = result.type === 'series' ? 'series' : 'movie'
+          if (!found.has(result.id)) {
+            found.set(result.id, type)
+          }
+        }
+      } catch (error) {
+        console.warn('Torrentio search fallback failed', { query, error: (error as Error).message })
+      }
+    }
+
+    return Array.from(found.entries()).map(([id, type]) => ({ id, type }))
+  }
+
   async streams(id: string): Promise<VodStreamDto[]> {
+    const debug = await this.streamsDebug(id)
+    return debug.streams
+  }
+
+  async streamsDebug(id: string) {
     const item = await this.item(id)
-    return item.streams
+    const preferredType = item.type === 'series' ? 'series' : 'movie'
+    const alternateType = preferredType === 'series' ? 'movie' : 'series'
+
+    const buildStreams = (streams: TorrentioStreamItem[]): VodStreamDto[] =>
+      streams
+        .map((stream) => {
+          const fileIdx = stream.fileIdx ?? 0
+          const filename = stream.behaviorHints?.filename || stream.title || stream.name || 'torrent'
+          const trimmedTitle = stream.title?.trim()
+          const trimmedName = stream.name?.trim()
+          const label = trimmedTitle && trimmedTitle.length > 0
+            ? trimmedTitle
+            : trimmedName && trimmedName.length > 0
+              ? trimmedName
+              : filename
+          const url = this.buildTorrentUrl(stream)
+
+          return {
+            id: `${stream.infoHash || 'torrent'}-${fileIdx}`,
+            label,
+            url,
+            source: this.extractStreamSource(stream),
+          }
+        })
+        .filter((stream) => stream.url.length > 0)
+
+    const tryTorrentioByType = async (type: string, sourceId: string) => {
+      const torrentioResponse = await this.torrentioService.stream(type, sourceId)
+      return {
+        sourceId,
+        type,
+        raw: torrentioResponse,
+        mapped: buildStreams(torrentioResponse.streams),
+      }
+    }
+
+    const debugResults: Array<{
+      step: string
+      type: string
+      sourceId: string
+      error?: string
+      raw?: unknown
+      mapped?: VodStreamDto[]
+    }> = []
+
+    try {
+      const primary = await tryTorrentioByType(preferredType, id)
+      debugResults.push({ step: 'primary', type: preferredType, sourceId: id, raw: primary.raw, mapped: primary.mapped })
+      if (primary.mapped.length > 0) return { item, streams: primary.mapped, debug: debugResults }
+    } catch (error) {
+      debugResults.push({ step: 'primary', type: preferredType, sourceId: id, error: (error as Error).message })
+    }
+
+    try {
+      const fallback = await tryTorrentioByType(alternateType, id)
+      debugResults.push({ step: 'alternate', type: alternateType, sourceId: id, raw: fallback.raw, mapped: fallback.mapped })
+      if (fallback.mapped.length > 0) return { item, streams: fallback.mapped, debug: debugResults }
+    } catch (error) {
+      debugResults.push({ step: 'alternate', type: alternateType, sourceId: id, error: (error as Error).message })
+    }
+
+    const fallbackCandidates = await this.searchTorrentioCandidates(item)
+    debugResults.push({ step: 'candidates', type: 'search', sourceId: item.title, raw: fallbackCandidates })
+
+    for (const candidate of fallbackCandidates) {
+      if (candidate.id === id) continue
+      try {
+        const candidateResult = await tryTorrentioByType(candidate.type, candidate.id)
+        debugResults.push({ step: 'candidate', type: candidate.type, sourceId: candidate.id, raw: candidateResult.raw, mapped: candidateResult.mapped })
+        if (candidateResult.mapped.length > 0) return { item, streams: candidateResult.mapped, debug: debugResults }
+      } catch (error) {
+        debugResults.push({ step: 'candidate', type: candidate.type, sourceId: candidate.id, error: (error as Error).message })
+      }
+    }
+
+    debugResults.push({ step: 'trailerFallback', type: 'local', sourceId: id, mapped: item.streams })
+    return { item, streams: item.streams, debug: debugResults }
   }
 }

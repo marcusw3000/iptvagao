@@ -133,6 +133,7 @@ data class VodStreamDto(
     val id: String,
     val label: String,
     val url: String,
+    val source: String?,
 )
 
 data class VodItemDetailsDto(

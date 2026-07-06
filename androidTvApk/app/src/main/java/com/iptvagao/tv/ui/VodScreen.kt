@@ -569,7 +569,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                                     onClick = {
                                         Toast.makeText(
                                             context,
-                                            "Stream: ${stream.label}\n${stream.url}",
+                                            "Origem: ${stream.source ?: "desconhecida"}\nStream: ${stream.label}\n${stream.url}",
                                             Toast.LENGTH_SHORT,
                                         ).show()
                                     },
@@ -577,7 +577,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                                         .padding(top = 10.dp)
                                         .fillMaxWidth(),
                                 ) {
-                                    Text(stream.label)
+                                    Text(stream.source?.let { "$it • ${stream.label}" } ?: stream.label)
                                 }
                             }
                         }

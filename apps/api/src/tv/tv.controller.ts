@@ -118,7 +118,14 @@ export class TvController {
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Get('vod/streams/:id')
-  vodStreams(@Param('id') id: string) {
-    return { streams: this.vodService.streams(id) }
+  async vodStreams(@Param('id') id: string) {
+    return { streams: await this.vodService.streams(id) }
+  }
+
+  @Public()
+  @UseGuards(DeviceAuthGuard)
+  @Get('vod/streams/:id/raw')
+  async vodStreamsRaw(@Param('id') id: string) {
+    return await this.vodService.streamsDebug(id)
   }
 }
