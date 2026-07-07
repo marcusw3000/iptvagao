@@ -111,21 +111,21 @@ export class TvController {
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Get('vod/item/:id')
-  vodItem(@Param('id') id: string) {
-    return this.vodService.item(id)
+  vodItem(@Param('id') id: string, @Query('type') type?: string) {
+    return this.vodService.item(id, type)
   }
 
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Get('vod/streams/:id')
-  async vodStreams(@Param('id') id: string) {
-    return { streams: await this.vodService.streams(id) }
+  async vodStreams(@Param('id') id: string, @Query('videoId') videoId?: string, @Query('type') type?: string) {
+    return { streams: await this.vodService.streamsDebug(id, videoId, type).then((result) => result.streams) }
   }
 
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Get('vod/streams/:id/raw')
-  async vodStreamsRaw(@Param('id') id: string) {
-    return await this.vodService.streamsDebug(id)
+  async vodStreamsRaw(@Param('id') id: string, @Query('videoId') videoId?: string, @Query('type') type?: string) {
+    return await this.vodService.streamsDebug(id, videoId, type)
   }
 }

@@ -136,6 +136,16 @@ data class VodStreamDto(
     val source: String?,
 )
 
+data class VodEpisodeDto(
+    val id: String,
+    val title: String,
+    val season: Int,
+    val episode: Int,
+    val description: String?,
+    val thumbnailUrl: String?,
+    val released: String?,
+)
+
 data class VodItemDetailsDto(
     val id: String,
     val title: String,
@@ -147,6 +157,7 @@ data class VodItemDetailsDto(
     val year: String?,
     val genres: List<String>,
     val streams: List<VodStreamDto>,
+    val episodes: List<VodEpisodeDto>,
 )
 
 data class VodStreamsResponse(
@@ -220,12 +231,15 @@ interface TvApi {
     suspend fun vodItem(
         @Header("Authorization") bearer: String,
         @Path("id") id: String,
+        @Query("type") type: String? = null,
     ): VodItemDetailsDto
 
     @GET("tv/vod/streams/{id}")
     suspend fun vodStreams(
         @Header("Authorization") bearer: String,
         @Path("id") id: String,
+        @Query("videoId") videoId: String? = null,
+        @Query("type") type: String? = null,
     ): VodStreamsResponse
 }
 

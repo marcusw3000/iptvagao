@@ -26,9 +26,20 @@ export interface VodStreamDto {
   source?: string
 }
 
+export interface VodEpisodeDto {
+  id: string
+  title: string
+  season: number
+  episode: number
+  description?: string
+  thumbnailUrl?: string
+  released?: string
+}
+
 export interface VodItemDetailsDto extends VodCatalogItemDto {
   backdropUrl?: string
   streams: VodStreamDto[]
+  episodes: VodEpisodeDto[]
 }
 
 interface CinemetaMetaPreview {
@@ -49,6 +60,18 @@ interface CinemetaTrailerStream {
 
 interface CinemetaMetaDetails extends CinemetaMetaPreview {
   trailerStreams?: CinemetaTrailerStream[]
+  videos?: CinemetaVideo[]
+}
+
+interface CinemetaVideo {
+  id: string
+  name?: string
+  season?: number
+  episode?: number
+  number?: number
+  description?: string
+  thumbnail?: string
+  released?: string
 }
 
 interface CinemetaCatalogResponse {
@@ -237,6 +260,30 @@ export class VodService {
     return trailers.filter((item): item is VodStreamDto => item !== null)
   }
 
+  private mapEpisodes(meta?: CinemetaMetaDetails): VodEpisodeDto[] {
+    if (!meta?.videos?.length) return []
+
+    const episodes: Array<VodEpisodeDto | null> = meta.videos.map((video) => {
+        const season = Number(video.season ?? 0)
+        const episode = Number(video.episode ?? video.number ?? 0)
+        if (!video.id || season < 0 || episode <= 0) return null
+
+        return {
+          id: video.id,
+          title: video.name?.trim() || `T${season} E${episode}`,
+          season,
+          episode,
+          description: video.description?.trim() || undefined,
+          thumbnailUrl: video.thumbnail || undefined,
+          released: video.released || undefined,
+        }
+      })
+
+    return episodes
+      .filter((episode): episode is VodEpisodeDto => episode !== null)
+      .sort((a, b) => a.season - b.season || a.episode - b.episode)
+  }
+
   private fallbackByType(type: 'movie' | 'series'): VodCatalogItemDto[] {
     return this.fallbackCatalog[type]
   }
@@ -309,16 +356,24 @@ export class VodService {
     return Promise.all(Array.from(unique.values()).map((item) => this.enrichWithTranslation(item)))
   }
 
-  async item(id: string): Promise<VodItemDetailsDto> {
-    const movieResponse = await this.fetchJson<CinemetaMetaResponse>(`/meta/movie/${encodeURIComponent(id)}.json`).catch(
-      () => null,
-    )
-    const seriesResponse =
-      movieResponse?.meta
-        ? null
-        : await this.fetchJson<CinemetaMetaResponse>(`/meta/series/${encodeURIComponent(id)}.json`).catch(() => null)
+  async item(id: string, type?: string): Promise<VodItemDetailsDto> {
+    const normalizedType = type === 'series' || type === 'movie' ? type : null
 
-    const meta = movieResponse?.meta ?? seriesResponse?.meta
+    const preferredResponse = normalizedType
+      ? await this.fetchJson<CinemetaMetaResponse>(`/meta/${normalizedType}/${encodeURIComponent(id)}.json`).catch(() => null)
+      : null
+
+    const movieResponse =
+      normalizedType === 'series'
+        ? null
+        : preferredResponse ?? await this.fetchJson<CinemetaMetaResponse>(`/meta/movie/${encodeURIComponent(id)}.json`).catch(() => null)
+
+    const seriesResponse =
+      normalizedType === 'movie'
+        ? null
+        : preferredResponse ?? (movieResponse?.meta ? null : await this.fetchJson<CinemetaMetaResponse>(`/meta/series/${encodeURIComponent(id)}.json`).catch(() => null))
+
+    const meta = preferredResponse?.meta ?? movieResponse?.meta ?? seriesResponse?.meta
 
     if (!meta) {
       const fallbackItem =
@@ -330,6 +385,7 @@ export class VodService {
           ...fallbackItem,
           backdropUrl: fallbackItem.posterUrl,
           streams: [],
+          episodes: [],
         }
       }
 
@@ -343,6 +399,7 @@ export class VodService {
       ...baseItem,
       backdropUrl: meta.background || meta.poster || undefined,
       streams: this.mapTrailers(meta),
+      episodes: this.mapEpisodes(meta),
     }
   }
 
@@ -387,21 +444,64 @@ export class VodService {
     return addonName || undefined
   }
 
-  private async searchTorrentioCandidates(item: VodItemDetailsDto): Promise<Array<{ id: string; type: 'movie' | 'series' }>> {
+  private normalizeSearchTitle(title?: string): string {
+    return (title ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+  }
+
+  private isLikelySameTitle(item: VodItemDetailsDto, candidateTitle: string): boolean {
+    const candidate = this.normalizeSearchTitle(candidateTitle)
+    if (!candidate) return false
+
+    const baseTitles = [item.title, item.translatedTitle]
+      .map((title) => this.normalizeSearchTitle(title))
+      .filter((title) => title.length > 0)
+
+    for (const baseTitle of baseTitles) {
+      if (baseTitle === candidate) return true
+
+      const baseTokens = baseTitle.split(' ').filter(Boolean)
+      const candidateTokens = candidate.split(' ').filter(Boolean)
+
+      if (baseTokens.length <= 1 || candidateTokens.length <= 1) {
+        continue
+      }
+
+      const significantBaseTokens = baseTokens.filter((token) => token.length >= 4)
+      if (significantBaseTokens.length === 0) continue
+
+      if (significantBaseTokens.every((token) => candidateTokens.includes(token))) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  private async searchTorrentioCandidates(item: VodItemDetailsDto): Promise<Array<{ id: string; type: 'movie' | 'series'; title: string }>> {
     const queries = new Set<string>()
     queries.add(item.title)
     if (item.translatedTitle) queries.add(item.translatedTitle)
     if (item.id) queries.add(item.id)
 
-    const found = new Map<string, 'movie' | 'series'>()
+    const found = new Map<string, { type: 'movie' | 'series'; title: string }>()
 
     for (const query of queries) {
       try {
         const results = await this.torrentioService.search(query)
         for (const result of results) {
           const type = result.type === 'series' ? 'series' : 'movie'
+          const title = result.title?.trim() || ''
+          if (!title || !this.isLikelySameTitle(item, title)) {
+            continue
+          }
+
           if (!found.has(result.id)) {
-            found.set(result.id, type)
+            found.set(result.id, { type, title })
           }
         }
       } catch (error) {
@@ -409,7 +509,7 @@ export class VodService {
       }
     }
 
-    return Array.from(found.entries()).map(([id, type]) => ({ id, type }))
+    return Array.from(found.entries()).map(([id, value]) => ({ id, type: value.type, title: value.title }))
   }
 
   async streams(id: string): Promise<VodStreamDto[]> {
@@ -417,23 +517,124 @@ export class VodService {
     return debug.streams
   }
 
-  async streamsDebug(id: string) {
-    const item = await this.item(id)
-    const preferredType = item.type === 'series' ? 'series' : 'movie'
+  private parseEpisodeSuffix(videoId?: string): string | undefined {
+    if (!videoId) return undefined
+    const parts = videoId.split(':')
+    if (parts.length !== 3) return undefined
+    return `:${parts[1]}:${parts[2]}`
+  }
+
+  private parseEpisodeSelection(videoId?: string): { season: number; episode: number } | undefined {
+    if (!videoId) return undefined
+    const parts = videoId.split(':')
+    if (parts.length !== 3) return undefined
+    const season = Number(parts[1])
+    const episode = Number(parts[2])
+    if (!Number.isInteger(season) || !Number.isInteger(episode) || season < 0 || episode <= 0) return undefined
+    return { season, episode }
+  }
+
+  private matchesRequestedEpisode(stream: TorrentioStreamItem, selection?: { season: number; episode: number }): boolean {
+    if (!selection) return true
+
+    const { season, episode } = selection
+    const seasonLabel = season.toString().padStart(2, '0')
+    const episodeLabel = episode.toString().padStart(2, '0')
+    const tokens = [
+      stream.behaviorHints?.filename,
+      stream.title,
+      stream.name,
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .toLowerCase()
+
+    if (!tokens) return true
+
+    const exactPatterns = [
+      `s${seasonLabel}e${episodeLabel}`,
+      `s${season}e${episode}`,
+      `${season}x${episodeLabel}`,
+      `${season}x${episode}`,
+      `season ${season} episode ${episode}`,
+      `season ${season} ep ${episode}`,
+    ]
+
+    if (exactPatterns.some((pattern) => tokens.includes(pattern))) {
+      return true
+    }
+
+    const rangePattern = new RegExp(`s${seasonLabel}e(\\d{2})\\s*[-_]\\s*e?(\\d{2})`, 'i')
+    const rangeMatch = tokens.match(rangePattern)
+    if (rangeMatch) {
+      const start = Number(rangeMatch[1])
+      const end = Number(rangeMatch[2])
+      if (episode >= start && episode <= end) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  private buildStreamLabel(stream: TorrentioStreamItem, selection?: { season: number; episode: number }): string {
+    const filename = stream.behaviorHints?.filename?.trim()
+    const titleLines = stream.title
+      ?.split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean) ?? []
+    const trimmedName = stream.name?.trim()
+
+    if (selection) {
+      const { season, episode } = selection
+      const seasonLabel = season.toString().padStart(2, '0')
+      const episodeLabel = episode.toString().padStart(2, '0')
+      const exactPatterns = [
+        `s${seasonLabel}e${episodeLabel}`,
+        `s${season}e${episode}`,
+        `${season}x${episodeLabel}`,
+        `${season}x${episode}`,
+      ]
+
+      const matchingTitleLine = titleLines.find((line) =>
+        exactPatterns.some((pattern) => line.toLowerCase().includes(pattern)),
+      )
+
+      if (filename && exactPatterns.some((pattern) => filename.toLowerCase().includes(pattern))) {
+        return filename
+      }
+
+      if (matchingTitleLine) {
+        return matchingTitleLine
+      }
+
+      if (filename) {
+        return filename
+      }
+    }
+
+    const firstTitleLine = titleLines.find((line) => line.length > 0)
+    if (firstTitleLine) return firstTitleLine
+    if (trimmedName) return trimmedName
+    if (filename) return filename
+    return 'torrent'
+  }
+
+  async streamsDebug(id: string, videoId?: string, type?: string) {
+    const item = await this.item(id, type)
+    const preferredType = type === 'series' || type === 'movie' ? type : item.type === 'series' ? 'series' : 'movie'
     const alternateType = preferredType === 'series' ? 'movie' : 'series'
+    const targetId = preferredType === 'series' && videoId ? videoId : id
+    const episodeSuffix = this.parseEpisodeSuffix(videoId)
+    const episodeSelection = this.parseEpisodeSelection(videoId)
+    const collectedStreams = new Map<string, VodStreamDto>()
 
     const buildStreams = (streams: TorrentioStreamItem[]): VodStreamDto[] =>
       streams
+        .filter((stream) => this.matchesRequestedEpisode(stream, episodeSelection))
         .map((stream) => {
           const fileIdx = stream.fileIdx ?? 0
-          const filename = stream.behaviorHints?.filename || stream.title || stream.name || 'torrent'
-          const trimmedTitle = stream.title?.trim()
-          const trimmedName = stream.name?.trim()
-          const label = trimmedTitle && trimmedTitle.length > 0
-            ? trimmedTitle
-            : trimmedName && trimmedName.length > 0
-              ? trimmedName
-              : filename
+          const label = this.buildStreamLabel(stream, episodeSelection)
           const url = this.buildTorrentUrl(stream)
 
           return {
@@ -444,6 +645,15 @@ export class VodService {
           }
         })
         .filter((stream) => stream.url.length > 0)
+
+    const collectStreams = (streams: VodStreamDto[]) => {
+      for (const stream of streams) {
+        const key = `${stream.id}|${stream.url}`
+        if (!collectedStreams.has(key)) {
+          collectedStreams.set(key, stream)
+        }
+      }
+    }
 
     const tryTorrentioByType = async (type: string, sourceId: string) => {
       const torrentioResponse = await this.torrentioService.stream(type, sourceId)
@@ -465,19 +675,19 @@ export class VodService {
     }> = []
 
     try {
-      const primary = await tryTorrentioByType(preferredType, id)
-      debugResults.push({ step: 'primary', type: preferredType, sourceId: id, raw: primary.raw, mapped: primary.mapped })
-      if (primary.mapped.length > 0) return { item, streams: primary.mapped, debug: debugResults }
+      const primary = await tryTorrentioByType(preferredType, targetId)
+      debugResults.push({ step: 'primary', type: preferredType, sourceId: targetId, raw: primary.raw, mapped: primary.mapped })
+      collectStreams(primary.mapped)
     } catch (error) {
-      debugResults.push({ step: 'primary', type: preferredType, sourceId: id, error: (error as Error).message })
+      debugResults.push({ step: 'primary', type: preferredType, sourceId: targetId, error: (error as Error).message })
     }
 
     try {
-      const fallback = await tryTorrentioByType(alternateType, id)
-      debugResults.push({ step: 'alternate', type: alternateType, sourceId: id, raw: fallback.raw, mapped: fallback.mapped })
-      if (fallback.mapped.length > 0) return { item, streams: fallback.mapped, debug: debugResults }
+      const fallback = await tryTorrentioByType(alternateType, targetId)
+      debugResults.push({ step: 'alternate', type: alternateType, sourceId: targetId, raw: fallback.raw, mapped: fallback.mapped })
+      collectStreams(fallback.mapped)
     } catch (error) {
-      debugResults.push({ step: 'alternate', type: alternateType, sourceId: id, error: (error as Error).message })
+      debugResults.push({ step: 'alternate', type: alternateType, sourceId: targetId, error: (error as Error).message })
     }
 
     const fallbackCandidates = await this.searchTorrentioCandidates(item)
@@ -486,12 +696,19 @@ export class VodService {
     for (const candidate of fallbackCandidates) {
       if (candidate.id === id) continue
       try {
-        const candidateResult = await tryTorrentioByType(candidate.type, candidate.id)
-        debugResults.push({ step: 'candidate', type: candidate.type, sourceId: candidate.id, raw: candidateResult.raw, mapped: candidateResult.mapped })
-        if (candidateResult.mapped.length > 0) return { item, streams: candidateResult.mapped, debug: debugResults }
+        const candidateSourceId = candidate.type === 'series' && episodeSuffix ? `${candidate.id}${episodeSuffix}` : candidate.id
+        const candidateResult = await tryTorrentioByType(candidate.type, candidateSourceId)
+        debugResults.push({ step: 'candidate', type: candidate.type, sourceId: candidateSourceId, raw: candidateResult.raw, mapped: candidateResult.mapped })
+        collectStreams(candidateResult.mapped)
       } catch (error) {
-        debugResults.push({ step: 'candidate', type: candidate.type, sourceId: candidate.id, error: (error as Error).message })
+        const candidateSourceId = candidate.type === 'series' && episodeSuffix ? `${candidate.id}${episodeSuffix}` : candidate.id
+        debugResults.push({ step: 'candidate', type: candidate.type, sourceId: candidateSourceId, error: (error as Error).message })
       }
+    }
+
+    const mergedStreams = Array.from(collectedStreams.values())
+    if (mergedStreams.length > 0) {
+      return { item, streams: mergedStreams, debug: debugResults }
     }
 
     debugResults.push({ step: 'trailerFallback', type: 'local', sourceId: id, mapped: item.streams })
