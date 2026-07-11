@@ -79,6 +79,13 @@ describe('ResellersService', () => {
     const result = await service.create({ name: 'Revendedor', email: 'rev@test.com' })
     expect(result.id).toBe('res-1')
     expect(result.email).toBe('rev@test.com')
+    expect(prisma.reseller.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          referralCode: expect.stringMatching(/^[A-Z0-9]{8}$/),
+        }),
+      }),
+    )
   })
 
   it('create throws ConflictException if email already used', async () => {
@@ -108,6 +115,29 @@ describe('ResellersService', () => {
 
   it('findOne throws NotFoundException for unknown id', async () => {
     await expect(service.findOne('bad')).rejects.toThrow(NotFoundException)
+  })
+
+  it('updateReferralCode updates the reseller code', async () => {
+    prisma.reseller.findUnique
+      .mockResolvedValueOnce(mockReseller)
+      .mockResolvedValueOnce(null)
+
+    await service.updateReferralCode('res-1', 'NOVO1234')
+
+    expect(prisma.reseller.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'res-1' },
+        data: { referralCode: 'NOVO1234' },
+      }),
+    )
+  })
+
+  it('updateReferralCode throws ConflictException when code is already used', async () => {
+    prisma.reseller.findUnique
+      .mockResolvedValueOnce(mockReseller)
+      .mockResolvedValueOnce({ id: 'res-2' })
+
+    await expect(service.updateReferralCode('res-1', 'NOVO1234')).rejects.toThrow(ConflictException)
   })
 
   it('suspend sets active to false', async () => {

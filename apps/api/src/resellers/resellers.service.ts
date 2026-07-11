@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
+import { randomBytes } from 'crypto'
 import { WithdrawalStatus } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateResellerDto } from './dto/create-reseller.dto'
@@ -42,9 +43,27 @@ const WITHDRAWAL_SELECT = {
 export class ResellersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private generateShortReferralCode(length = 8) {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    const bytes = randomBytes(length)
+    return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
+  }
+
+  private async getUniqueReferralCode() {
+    for (let attempt = 0; attempt < 25; attempt++) {
+      const referralCode = this.generateShortReferralCode()
+      const existing = await this.prisma.reseller.findUnique({
+        where: { referralCode },
+      })
+      if (!existing) return referralCode
+    }
+
+    throw new ConflictException('Nao foi possivel gerar um codigo de indicacao unico')
+  }
+
   private async assertReseller(id: string) {
     const reseller = await this.prisma.reseller.findUnique({ where: { id } })
-    if (!reseller) throw new NotFoundException('Revendedor não encontrado')
+    if (!reseller) throw new NotFoundException('Revendedor nao encontrado')
     return reseller
   }
 
@@ -52,8 +71,9 @@ export class ResellersService {
     const wd = await this.prisma.resellerWithdrawal.findUnique({
       where: { id: withdrawalId },
     })
-    if (!wd || wd.resellerId !== resellerId)
-      throw new NotFoundException('Saque não encontrado')
+    if (!wd || wd.resellerId !== resellerId) {
+      throw new NotFoundException('Saque nao encontrado')
+    }
     return wd
   }
 
@@ -61,12 +81,15 @@ export class ResellersService {
     const exists = await this.prisma.reseller.findUnique({
       where: { email: dto.email },
     })
-    if (exists) throw new ConflictException('Email já utilizado')
+    if (exists) throw new ConflictException('Email ja utilizado')
+
+    const referralCode = await this.getUniqueReferralCode()
 
     return this.prisma.reseller.create({
       data: {
         name: dto.name,
         email: dto.email,
+        referralCode,
         ...(dto.commissionPct !== undefined && {
           commissionPct: dto.commissionPct,
         }),
@@ -104,7 +127,7 @@ export class ResellersService {
       where: { id },
       select: RESELLER_SELECT,
     })
-    if (!reseller) throw new NotFoundException('Revendedor não encontrado')
+    if (!reseller) throw new NotFoundException('Revendedor nao encontrado')
 
     const [clientCount, commissionsAgg, withdrawalsAgg] = await Promise.all([
       this.prisma.client.count({ where: { resellerId: id } }),
@@ -124,6 +147,37 @@ export class ResellersService {
       totalCommissions: commissionsAgg._sum.amount?.toString() ?? '0',
       pendingWithdrawalAmount: withdrawalsAgg._sum.amount?.toString() ?? '0',
     }
+  }
+
+  async findByReferralCode(referralCode: string) {
+    return this.prisma.reseller.findUnique({
+      where: { referralCode },
+      select: {
+        id: true,
+        name: true,
+        referralCode: true,
+        active: true,
+      },
+    })
+  }
+
+  async updateReferralCode(id: string, referralCode: string) {
+    await this.assertReseller(id)
+
+    const existing = await this.prisma.reseller.findUnique({
+      where: { referralCode },
+      select: { id: true },
+    })
+
+    if (existing && existing.id !== id) {
+      throw new ConflictException('Codigo de indicacao ja utilizado')
+    }
+
+    return this.prisma.reseller.update({
+      where: { id },
+      data: { referralCode },
+      select: RESELLER_SELECT,
+    })
   }
 
   async suspend(id: string) {

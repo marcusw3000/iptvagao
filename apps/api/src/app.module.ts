@@ -21,6 +21,7 @@ import { UploadsModule } from './uploads/uploads.module'
 import { TvModule } from './tv/tv.module'
 import { EpgModule } from './epg/epg.module'
 import { AppReleasesModule } from './app-releases/app-releases.module'
+import { PublicSignupModule } from './public-signup/public-signup.module'
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { AppReleasesModule } from './app-releases/app-releases.module'
     TvModule,
     EpgModule,
     AppReleasesModule,
+    PublicSignupModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

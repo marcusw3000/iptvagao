@@ -41,7 +41,7 @@ export class TorrentEngineService {
     this.downloadDir = this.configService.get<string>('TORRENT_DOWNLOAD_DIR') ?? path.join(process.cwd(), 'storage', 'torrents')
   }
 
-  async prepareStream(source: string): Promise<TorrentStreamPreparationResult> {
+  async prepareStream(source: string, reqBaseUrl?: string): Promise<TorrentStreamPreparationResult> {
     if (!source || (!source.startsWith('magnet:') && !source.endsWith('.torrent'))) {
       throw new BadRequestException('Fonte inválida para torrent')
     }
@@ -64,10 +64,14 @@ export class TorrentEngineService {
 
     this.activeDownloads.set(id, { filePath, fileName, mimeType })
 
+    const baseUrl = reqBaseUrl
+      ? reqBaseUrl.replace('localhost', '10.0.2.2').replace('127.0.0.1', '10.0.2.2')
+      : (this.configService.get<string>('API_URL') ?? 'http://localhost:3001')
+
     return {
       status: 'ready',
       id,
-      streamUrl: `${this.configService.get<string>('API_URL') ?? 'http://localhost:3001'}/api/v1/tv/torrent/file/${id}`,
+      streamUrl: `${baseUrl}/api/v1/tv/torrent/file/${id}`,
       fileName,
       mimeType,
     }

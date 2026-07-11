@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,6 +88,64 @@ import com.iptvagao.tv.data.VodStreamDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+
+// --- URL validation ---
+
+private fun isDirectPlaybackUrl(url: String): Boolean {
+    val trimmed = url.trim()
+    return trimmed.startsWith("http://", ignoreCase = true) ||
+        trimmed.startsWith("https://", ignoreCase = true)
+}
+
+private fun isHlsUrl(url: String): Boolean =
+    url.trim().contains(".m3u8", ignoreCase = true)
+
+private fun isDownloadableDirectUrl(url: String): Boolean =
+    isDirectPlaybackUrl(url) && !isHlsUrl(url)
+
+private fun isMagnetUrl(url: String): Boolean =
+    url.trim().startsWith("magnet:", ignoreCase = true)
+
+// --- VOD download ---
+
+private val vodDownloadClient by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.MINUTES)
+        .build()
+}
+
+private suspend fun downloadVodFile(
+    url: String,
+    destFile: File,
+    onProgress: (Float) -> Unit,
+) = withContext(Dispatchers.IO) {
+    val request = Request.Builder().url(url).build()
+    vodDownloadClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw IOException("Download falhou: ${response.code}")
+        val body = response.body ?: throw IOException("Resposta vazia do servidor")
+        val total = body.contentLength()
+        var downloaded = 0L
+        body.byteStream().use { input ->
+            destFile.outputStream().use { output ->
+                val buf = ByteArray(8 * 1024)
+                var read: Int
+                while (input.read(buf).also { read = it } != -1) {
+                    output.write(buf, 0, read)
+                    downloaded += read
+                    if (total > 0) onProgress(downloaded.toFloat() / total)
+                }
+            }
+        }
+    }
+}
+
+// ---
 
 private fun localizedVodType(type: String): String = when (type.lowercase()) {
     "movie" -> "Filme"
@@ -290,6 +349,12 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
     var debugFocusedCard by remember { mutableStateOf<VodDebugSelection?>(null) }
     var debugOpenedItem by remember { mutableStateOf<VodDebugSelection?>(null) }
     var initialFocusRequested by remember { mutableStateOf(false) }
+    // Download state
+    var downloadingStreamId by remember { mutableStateOf<String?>(null) }
+    var downloadProgress by remember { mutableFloatStateOf(0f) }
+    var downloadMessage by remember { mutableStateOf<String?>(null) }
+    // Prepare/resolve state (converts magnet to HTTP before playing)
+    var preparingStreamId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val bearer = session.bearer ?: ""
@@ -307,6 +372,15 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
     val availableGenres = genreOptionsFor(selectedCategory)
     val selectedGenreLabel = availableGenres.firstOrNull { it.value == selectedGenre }?.label ?: "Todas"
 
+    fun resetTransferState(clearMessage: Boolean = true) {
+        preparingStreamId = null
+        downloadingStreamId = null
+        downloadProgress = 0f
+        if (clearMessage) {
+            downloadMessage = null
+        }
+    }
+
     fun openItem(item: VodItemDetailsDto, source: String = "unknown") {
         debugOpenedItem = VodDebugSelection(
             title = item.title,
@@ -320,6 +394,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
         itemLoading = false
         streamLoading = false
         streamError = null
+        resetTransferState()
 
         scope.launch {
             itemLoading = true
@@ -353,6 +428,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
             streamLoading = true
             streamError = null
             streamItems = emptyList()
+            resetTransferState()
             try {
                 val details = fetchVodItem(bearer, requestedId, item.type)
                 if (selectedItem?.id == requestedId) {
@@ -749,6 +825,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                     itemLoading = false
                     streamError = null
                     streamLoading = false
+                    resetTransferState()
                 },
                 properties = DialogProperties(
                     usePlatformDefaultWidth = false,
@@ -841,6 +918,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                                             selectedEpisodeId = item.episodes.firstOrNull { it.season == season }?.id
                                             streamItems = emptyList()
                                             streamError = null
+                                            resetTransferState()
                                         },
                                     )
                                 }
@@ -866,6 +944,7 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                                             selectedEpisodeId = episode.id
                                             streamItems = emptyList()
                                             streamError = null
+                                            resetTransferState()
                                             loadStreamsForSelection(item, episode.id)
                                         },
                                         modifier = Modifier.fillMaxWidth(),
@@ -922,34 +1001,226 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                                 color = IptvColors.TextPrimary,
                             )
                         }
+                        // Download status bar
+                        if (downloadingStreamId != null) {
+                            item {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(IptvColors.Surface)
+                                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        downloadMessage ?: "Preparando download...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = IptvColors.TextPrimary,
+                                    )
+                                    LinearProgressIndicator(
+                                        progress = { downloadProgress },
+                                        color = IptvColors.Accent,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
+                        // Prepare status indicator
+                        if (preparingStreamId != null) {
+                            item {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(IptvColors.Surface)
+                                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(color = IptvColors.Accent, modifier = Modifier.size(20.dp))
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Text(
+                                            "Preparando arquivo para reprodução...",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = IptvColors.TextPrimary,
+                                        )
+                                        Text(
+                                            "Esta etapa pode demorar porque o backend precisa disponibilizar o vídeo antes de tocar.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = IptvColors.TextSecondary,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (downloadMessage != null && downloadingStreamId == null) {
+                            item {
+                                Text(
+                                    downloadMessage ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (downloadMessage?.startsWith("✗") == true || downloadMessage?.startsWith("✗") == true) MaterialTheme.colorScheme.error else IptvColors.TextSecondary,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
                         items(streamItems.size) { index ->
                             val stream = streamItems[index]
-                            VodActionButton(
-                                label = stream.source?.let { "$it • ${stream.label}" } ?: stream.label,
-                                onClick = {
-                                    val subtitle = buildString {
-                                        append(item.title)
-                                        if (item.type == "series") {
-                                            selectedEpisode?.let {
-                                                append(" • ")
-                                                append(formatEpisodeMeta(it))
-                                            }
-                                        }
-                                        stream.source?.let {
-                                            append(" • ")
-                                            append(it)
-                                        }
-                                    }
-                                    playingItem = VodPlaybackItem(
-                                        title = stream.label,
-                                        subtitle = subtitle,
-                                        url = stream.url,
-                                    )
-                                },
+                            val isDirect = isDirectPlaybackUrl(stream.url)
+                            val isHls = isHlsUrl(stream.url)
+                            val isDownloadableDirect = isDownloadableDirectUrl(stream.url)
+                            val isMagnet = isMagnetUrl(stream.url)
+                            val isUnsupported = !isDirect && !isMagnet
+                            val isDownloading = downloadingStreamId == stream.id
+                            val isPreparing = preparingStreamId == stream.id
+                            val streamLabel = stream.source?.let { "${it} • ${stream.label}" } ?: stream.label
+
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .then(if (index == 0) Modifier.focusRequester(firstStreamFocusRequester) else Modifier),
-                            )
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                // Stream label
+                                Text(
+                                    text = streamLabel,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = IptvColors.TextSecondary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (isUnsupported) {
+                                    // Protocolo não suportado — apenas alerta, sem botão de play
+                                    Text(
+                                        "Fonte não compatível com o player atual.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                } else {
+                                    if (isHls) {
+                                        Text(
+                                            "Download desativado para HLS: este link aponta para um manifesto .m3u8, nao para um arquivo de video offline.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = IptvColors.TextSecondary,
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        // Botão Reproduzir
+                                        VodActionButton(
+                                            label = when {
+                                                isPreparing -> "Preparando..."
+                                                isMagnet -> "Preparar e Reproduzir"
+                                                else -> "Reproduzir"
+                                            },
+                                            enabled = !isPreparing && !isDownloading && downloadingStreamId == null && preparingStreamId == null,
+                                            onClick = {
+                                                downloadMessage = null
+                                                if (isMagnet) {
+                                                    // Chama o endpoint prepare para converter magnet -> URL HTTP
+                                                    scope.launch {
+                                                        preparingStreamId = stream.id
+                                                        try {
+                                                            val result = withContext(Dispatchers.IO) {
+                                                                Api.service.prepareTorrent(bearer, stream.url)
+                                                            }
+                                                            if (result.status == "ready" && !result.streamUrl.isNullOrBlank()) {
+                                                                val subtitle = buildString {
+                                                                    append(item.title)
+                                                                    if (item.type == "series") {
+                                                                        selectedEpisode?.let {
+                                                                            append(" • ")
+                                                                            append(formatEpisodeMeta(it))
+                                                                        }
+                                                                    }
+                                                                    stream.source?.let {
+                                                                        append(" • ")
+                                                                        append(it)
+                                                                    }
+                                                                }
+                                                                playingItem = VodPlaybackItem(
+                                                                    title = stream.label,
+                                                                    subtitle = subtitle,
+                                                                    url = result.streamUrl,
+                                                                )
+                                                            } else {
+                                                                streamError = "Não foi possível preparar o stream: ${result.message ?: "erro desconhecido"}"
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            streamError = "Falha ao preparar stream: ${e.message}"
+                                                        } finally {
+                                                            preparingStreamId = null
+                                                        }
+                                                    }
+                                                } else {
+                                                    // URL direta — abre player direto
+                                                    val subtitle = buildString {
+                                                        append(item.title)
+                                                        if (item.type == "series") {
+                                                            selectedEpisode?.let {
+                                                                append(" • ")
+                                                                append(formatEpisodeMeta(it))
+                                                            }
+                                                        }
+                                                        stream.source?.let {
+                                                            append(" • ")
+                                                            append(it)
+                                                        }
+                                                    }
+                                                    playingItem = VodPlaybackItem(
+                                                        title = stream.label,
+                                                        subtitle = subtitle,
+                                                        url = stream.url,
+                                                    )
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        // Botão Download (apenas para URLs diretas)
+                                        if (isDownloadableDirect) {
+                                            VodActionButton(
+                                                label = when {
+                                                    isDownloading -> "${(downloadProgress * 100).toInt()}%"
+                                                    else -> "Download"
+                                                },
+                                                enabled = !isDownloading && downloadingStreamId == null && preparingStreamId == null,
+                                                onClick = {
+                                                    scope.launch {
+                                                        val safeLabel = stream.label
+                                                            .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                                                            .take(80)
+                                                        val ext = when {
+                                                            stream.url.contains(".mkv", ignoreCase = true) -> "mkv"
+                                                            stream.url.contains(".webm", ignoreCase = true) -> "webm"
+                                                            else -> "mp4"
+                                                        }
+                                                        val downloadsDir = File(context.filesDir, "vod_downloads").apply { mkdirs() }
+                                                        val destFile = File(downloadsDir, "${safeLabel}.${ext}")
+
+                                                        downloadingStreamId = stream.id
+                                                        downloadProgress = 0f
+                                                        downloadMessage = "Baixando: ${stream.label}"
+                                                        try {
+                                                            downloadVodFile(stream.url, destFile) { progress ->
+                                                                downloadProgress = progress
+                                                            }
+                                                            downloadMessage = "✓ Download concluído: ${destFile.name}"
+                                                        } catch (e: Exception) {
+                                                            downloadMessage = "✗ Falha no download: ${e.message}"
+                                                            destFile.delete()
+                                                        } finally {
+                                                            downloadingStreamId = null
+                                                            downloadProgress = 0f
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     item {
@@ -962,6 +1233,8 @@ fun VodScreen(session: Session, onBack: () -> Unit) {
                                 streamItems = emptyList()
                                 itemLoading = false
                                 streamError = null
+                                playingItem = null
+                                resetTransferState()
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1872,3 +2145,5 @@ private fun CenterMessage(message: String, onRetry: (() -> Unit)? = null) {
         }
     }
 }
+
+

@@ -164,6 +164,15 @@ data class VodStreamsResponse(
     val streams: List<VodStreamDto>,
 )
 
+data class TorrentPreparationResponse(
+    val status: String,
+    val id: String?,
+    val streamUrl: String?,
+    val fileName: String?,
+    val mimeType: String?,
+    val message: String?,
+)
+
 // --- Retrofit service ---
 
 interface TvApi {
@@ -241,6 +250,12 @@ interface TvApi {
         @Query("videoId") videoId: String? = null,
         @Query("type") type: String? = null,
     ): VodStreamsResponse
+
+    @GET("tv/torrent/prepare")
+    suspend fun prepareTorrent(
+        @Header("Authorization") bearer: String,
+        @Query("source") source: String,
+    ): TorrentPreparationResponse
 }
 
 object Api {

@@ -96,8 +96,11 @@ export class TvController {
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Get('torrent/prepare')
-  async prepareTorrent(@Query('source') source: string) {
-    return this.torrentEngineService.prepareStream(source)
+  async prepareTorrent(@Query('source') source: string, @Req() req: any) {
+    const host = req.headers.host || 'localhost:3001'
+    const protocol = (req.headers['x-forwarded-proto'] as string) || 'http'
+    const reqBaseUrl = `${protocol}://${host}`
+    return this.torrentEngineService.prepareStream(source, reqBaseUrl)
   }
 
   @Public()

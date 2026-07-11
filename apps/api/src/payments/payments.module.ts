@@ -8,5 +8,6 @@ import { PaymentsService } from './payments.service'
   imports: [PrismaModule, AbacatepayModule],
   controllers: [PaymentsController],
   providers: [PaymentsService],
+  exports: [PaymentsService],
 })
 export class PaymentsModule {}

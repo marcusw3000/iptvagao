@@ -411,18 +411,22 @@ export class VodService {
   ]
 
   private buildTorrentUrl(stream: TorrentioStreamItem): string {
-    if (stream.url) return stream.url
-
-    const infoHash = stream.infoHash?.trim()
-    if (!infoHash) return ''
-
-    const filename = stream.behaviorHints?.filename || stream.title || stream.name || 'torrent'
-    const params = new URLSearchParams({ xt: `urn:btih:${infoHash}`, dn: filename })
-    for (const tracker of this.torrentTrackers) {
-      params.append('tr', tracker)
+    if (stream.url) {
+      const trimmed = stream.url.trim()
+      if (trimmed.startsWith('magnet:')) return ''
+      return trimmed
     }
+    return ''
+  }
 
-    return `magnet:?${params.toString()}`
+  private normalizePlaybackUrl(url: string): string | null {
+    if (!url) return null
+    const trimmed = url.trim()
+    if (trimmed.startsWith('magnet:')) return null
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return null
+    return trimmed
+      .replace('://localhost', '://10.0.2.2')
+      .replace('://127.0.0.1', '://10.0.2.2')
   }
 
   private extractStreamSource(stream: TorrentioStreamItem): string | undefined {
@@ -635,7 +639,8 @@ export class VodService {
         .map((stream) => {
           const fileIdx = stream.fileIdx ?? 0
           const label = this.buildStreamLabel(stream, episodeSelection)
-          const url = this.buildTorrentUrl(stream)
+          const rawUrl = this.buildTorrentUrl(stream)
+          const url = this.normalizePlaybackUrl(rawUrl) || ''
 
           return {
             id: `${stream.infoHash || 'torrent'}-${fileIdx}`,

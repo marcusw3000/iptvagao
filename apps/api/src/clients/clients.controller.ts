@@ -2,10 +2,10 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query,
 import { UserRole } from '@prisma/client'
 import { ClientsService } from './clients.service'
 import { CreateClientDto } from './dto/create-client.dto'
+import { FindClientsQueryDto } from './dto/find-clients-query.dto'
 import { UpdateClientDto } from './dto/update-client.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { Roles } from '../common/decorators/roles.decorator'
-import { PaginationDto } from '../common/dto/pagination.dto'
 
 const ADMIN_ROLES = [UserRole.master_admin, UserRole.support, UserRole.financial]
 
@@ -21,16 +21,12 @@ export class ClientsController {
   }
 
   @Get()
-  findAll(
-    @Query() pagination: PaginationDto,
-    @Query('resellerId') resellerId?: string,
-    @Query('search') search?: string,
-  ) {
+  findAll(@Query() query: FindClientsQueryDto) {
     return this.clientsService.findAll({
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? 20,
-      resellerId,
-      search,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      resellerId: query.resellerId,
+      search: query.search,
     })
   }
 

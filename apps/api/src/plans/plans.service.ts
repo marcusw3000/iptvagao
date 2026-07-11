@@ -6,6 +6,21 @@ import { CreatePlanDto, UpdatePlanDto } from './dto/create-plan.dto'
 export class PlansService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findPublicPlans() {
+    return this.prisma.plan.findMany({
+      where: { active: true },
+      select: { id: true, name: true, type: true, price: true },
+      orderBy: { price: 'asc' },
+    })
+  }
+
+  async findActivePlan(id: string) {
+    return this.prisma.plan.findFirst({
+      where: { id, active: true },
+      select: { id: true, name: true, type: true, price: true },
+    })
+  }
+
   async findAll(showAll = false) {
     return this.prisma.plan.findMany({
       where: showAll ? undefined : { active: true },
