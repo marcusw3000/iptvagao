@@ -29,11 +29,15 @@ export class ClientsService {
     private readonly usersService: UsersService,
   ) {}
 
-  async create(dto: CreateClientDto) {
+  async create(
+    dto: CreateClientDto,
+    userCredentials?: { username: string; password: string; email?: string },
+  ) {
     const exists = await this.prisma.client.findUnique({ where: { email: dto.email } })
     if (exists) throw new ConflictException('Email já utilizado')
 
-    const credentials = await this.usersService.generateClientCredentials()
+    const credentials: { username: string; password: string; email?: string } =
+      userCredentials ?? await this.usersService.generateClientCredentials()
 
     let client: Awaited<ReturnType<typeof this.prisma.client.create>>
     try {
@@ -47,6 +51,7 @@ export class ClientsService {
       await this.usersService.create({
         username: credentials.username,
         password: credentials.password,
+        email: credentials.email,
         role: UserRole.client_admin,
         clientId: client.id,
       })

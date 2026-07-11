@@ -413,7 +413,6 @@ export class VodService {
   private buildTorrentUrl(stream: TorrentioStreamItem): string {
     if (stream.url) {
       const trimmed = stream.url.trim()
-      if (trimmed.startsWith('magnet:')) return ''
       return trimmed
     }
     return ''
@@ -640,7 +639,7 @@ export class VodService {
           const fileIdx = stream.fileIdx ?? 0
           const label = this.buildStreamLabel(stream, episodeSelection)
           const rawUrl = this.buildTorrentUrl(stream)
-          const url = this.normalizePlaybackUrl(rawUrl) || ''
+          const url = rawUrl.startsWith('magnet:') ? rawUrl : this.normalizePlaybackUrl(rawUrl) || ''
 
           return {
             id: `${stream.infoHash || 'torrent'}-${fileIdx}`,

@@ -90,11 +90,73 @@ set "TARGET_PORT=%~3"
 echo [%TARGET_PORT%] Verificando %WINDOW_TITLE%
 powershell -NoProfile -Command "try { $c = New-Object Net.Sockets.TcpClient('127.0.0.1', %TARGET_PORT%); $c.Close(); exit 0 } catch { exit 1 }"
 if errorlevel 1 (
-    echo      Iniciando %WINDOW_TITLE%...
-    start "%WINDOW_TITLE%" cmd /k "cd /d ""%TARGET_DIR%"" && pnpm dev"
+    call :start_web_clean "%WINDOW_TITLE%" "%TARGET_DIR%" "%TARGET_PORT%"
 ) else (
-    echo      Ja esta ativo.
+    call :validate_web "%WINDOW_TITLE%" "%TARGET_DIR%" "%TARGET_PORT%"
 )
+exit /b 0
+
+:start_web_clean
+set "WINDOW_TITLE=%~1"
+set "TARGET_DIR=%~2"
+set "TARGET_PORT=%~3"
+echo      Iniciando %WINDOW_TITLE%...
+powershell -NoProfile -Command "$path = Join-Path '%TARGET_DIR%' '.next'; if (Test-Path $path) { Remove-Item -LiteralPath $path -Recurse -Force }"
+start "%WINDOW_TITLE%" cmd /k "cd /d ""%TARGET_DIR%"" && pnpm dev"
+echo      Aguardando %WINDOW_TITLE% responder na porta %TARGET_PORT%...
+powershell -NoProfile -Command "$deadline=(Get-Date).AddMinutes(2); do { try { $c = New-Object Net.Sockets.TcpClient('127.0.0.1',%TARGET_PORT%); $c.Close(); exit 0 } catch { Start-Sleep -Seconds 2 } } while ((Get-Date) -lt $deadline); exit 1"
+if errorlevel 1 (
+    echo      Falha: %WINDOW_TITLE% nao respondeu na porta %TARGET_PORT%.
+    exit /b 1
+)
+call :validate_web "%WINDOW_TITLE%" "%TARGET_DIR%" "%TARGET_PORT%"
+exit /b %ERRORLEVEL%
+
+:validate_web
+set "WINDOW_TITLE=%~1"
+set "TARGET_DIR=%~2"
+set "TARGET_PORT=%~3"
+powershell -NoProfile -Command ^
+  "$base='http://127.0.0.1:%TARGET_PORT%';" ^
+  "try {" ^
+  "  $html=(Invoke-WebRequest -Uri ($base + '/login') -UseBasicParsing -TimeoutSec 15).Content;" ^
+  "  if ($html -notmatch '/_next/static/css/app/layout\\.css\\?v=\\d+') { exit 2 };" ^
+  "  $cssPath=$matches[0];" ^
+  "  $css=(Invoke-WebRequest -Uri ($base + $cssPath) -UseBasicParsing -TimeoutSec 15);" ^
+  "  if ($css.StatusCode -ne 200) { exit 3 };" ^
+  "  exit 0;" ^
+  "} catch { exit 4 }"
+if not errorlevel 1 (
+    echo      %WINDOW_TITLE% saudavel.
+    exit /b 0
+)
+echo      %WINDOW_TITLE% respondeu, mas os assets do Next estao invalidos. Reiniciando limpo...
+for /f %%P in ('powershell -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %TARGET_PORT% -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($conn) { $conn.OwningProcess }"') do set "PORT_PID=%%P"
+if defined PORT_PID (
+    powershell -NoProfile -Command "Stop-Process -Id %PORT_PID% -Force -ErrorAction SilentlyContinue"
+    set "PORT_PID="
+)
+powershell -NoProfile -Command "$path = Join-Path '%TARGET_DIR%' '.next'; if (Test-Path $path) { Remove-Item -LiteralPath $path -Recurse -Force }"
+start "%WINDOW_TITLE%" cmd /k "cd /d ""%TARGET_DIR%"" && pnpm dev"
+echo      Validando reinicio limpo de %WINDOW_TITLE%...
+powershell -NoProfile -Command ^
+  "$base='http://127.0.0.1:%TARGET_PORT%'; $deadline=(Get-Date).AddMinutes(2);" ^
+  "do {" ^
+  "  try {" ^
+  "    $html=(Invoke-WebRequest -Uri ($base + '/login') -UseBasicParsing -TimeoutSec 15).Content;" ^
+  "    if ($html -match '/_next/static/css/app/layout\\.css\\?v=\\d+') {" ^
+  "      $css=(Invoke-WebRequest -Uri ($base + $matches[0]) -UseBasicParsing -TimeoutSec 15);" ^
+  "      if ($css.StatusCode -eq 200) { exit 0 }" ^
+  "    }" ^
+  "  } catch {}" ^
+  "  Start-Sleep -Seconds 2" ^
+  "} while ((Get-Date) -lt $deadline);" ^
+  "exit 1"
+if errorlevel 1 (
+    echo      Falha: %WINDOW_TITLE% nao voltou saudavel apos reinicio limpo.
+    exit /b 1
+)
+echo      %WINDOW_TITLE% recuperado com sucesso.
 exit /b 0
 
 :ensure_emulator

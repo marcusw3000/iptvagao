@@ -41,6 +41,36 @@ interface SignupSuccess {
   }
 }
 
+function normalizeDigits(value: string) {
+  return value.replace(/\D/g, '')
+}
+
+function isValidCpf(value: string) {
+  const digits = normalizeDigits(value)
+  if (!/^\d{11}$/.test(digits) || /^(\d)\1{10}$/.test(digits)) {
+    return false
+  }
+
+  const numbers = digits.split('').map(Number)
+  const calcCheckDigit = (sliceLength: number) => {
+    const sum = numbers
+      .slice(0, sliceLength)
+      .reduce((acc, digit, index) => acc + digit * (sliceLength + 1 - index), 0)
+    const remainder = (sum * 10) % 11
+    return remainder === 10 ? 0 : remainder
+  }
+
+  return calcCheckDigit(9) === numbers[9] && calcCheckDigit(10) === numbers[10]
+}
+
+function formatCpf(value: string) {
+  const digits = normalizeDigits(value).slice(0, 11)
+  return digits
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1-$2')
+}
+
 const signupSchema = z.object({
   referralCode: z
     .string()
@@ -49,7 +79,13 @@ const signupSchema = z.object({
   name: z.string().min(2, 'Minimo 2 caracteres'),
   email: z.string().email('Email invalido'),
   phone: z.string().min(8, 'Informe seu WhatsApp'),
+  document: z.string().refine((value) => isValidCpf(value), 'Informe um CPF valido'),
+  password: z.string().min(6, 'Minimo 6 caracteres'),
+  confirmPassword: z.string().min(6, 'Confirme a senha'),
   planId: z.string().min(1, 'Escolha um plano'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'As senhas precisam ser iguais',
+  path: ['confirmPassword'],
 })
 
 type SignupForm = z.infer<typeof signupSchema>
@@ -81,10 +117,14 @@ export function SignupContent() {
       name: '',
       email: '',
       phone: '',
+      document: '',
+      password: '',
+      confirmPassword: '',
       planId: '',
     },
   })
 
+  const documentRegistration = register('document')
   const referralCode = watch('referralCode')
 
   useEffect(() => {
@@ -141,9 +181,11 @@ export function SignupContent() {
 
     setSubmitting(true)
     try {
+      const { confirmPassword, ...payload } = data
       const response = await api.post<SignupSuccess>('/public/signup/onboard', {
-        ...data,
-        referralCode: data.referralCode.trim().toUpperCase(),
+        ...payload,
+        document: normalizeDigits(payload.document),
+        referralCode: payload.referralCode.trim().toUpperCase(),
       })
 
       setSuccess(response.data)
@@ -186,7 +228,7 @@ export function SignupContent() {
                 <p className="mb-3 text-xs uppercase tracking-[0.18em] text-gray-500">Credenciais</p>
                 <div className="space-y-3">
                   <div>
-                    <p className="text-xs text-gray-500">Usuario</p>
+                    <p className="text-xs text-gray-500">Login</p>
                     <div className="mt-1 flex items-center justify-between rounded-lg bg-gray-800 px-3 py-2">
                       <span className="font-mono">{success.credentials.username}</span>
                       <button onClick={() => copyCredentials(success.credentials.username)} className="text-gray-400 hover:text-white">
@@ -300,14 +342,57 @@ export function SignupContent() {
               </div>
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm text-gray-300">WhatsApp</label>
-              <input
-                {...register('phone')}
-                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition-colors focus:border-indigo-500"
-                placeholder="11999999999"
-              />
-              {errors.phone && <p className="mt-1 text-xs text-red-400">{errors.phone.message}</p>}
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm text-gray-300">Senha de acesso</label>
+                <input
+                  {...register('password')}
+                  type="password"
+                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition-colors focus:border-indigo-500"
+                  placeholder="Minimo 6 caracteres"
+                />
+                {errors.password && <p className="mt-1 text-xs text-red-400">{errors.password.message}</p>}
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-gray-300">Confirmar senha</label>
+                <input
+                  {...register('confirmPassword')}
+                  type="password"
+                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition-colors focus:border-indigo-500"
+                  placeholder="Repita a senha"
+                />
+                {errors.confirmPassword && <p className="mt-1 text-xs text-red-400">{errors.confirmPassword.message}</p>}
+              </div>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm text-gray-300">WhatsApp</label>
+                <input
+                  {...register('phone')}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition-colors focus:border-indigo-500"
+                  placeholder="11999999999"
+                />
+                {errors.phone && <p className="mt-1 text-xs text-red-400">{errors.phone.message}</p>}
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-gray-300">CPF</label>
+                <input
+                  name={documentRegistration.name}
+                  ref={documentRegistration.ref}
+                  onBlur={documentRegistration.onBlur}
+                  inputMode="numeric"
+                  maxLength={14}
+                  onChange={(event) => {
+                    const formatted = formatCpf(event.target.value)
+                    event.target.value = formatted
+                    setValue('document', formatted, { shouldDirty: true, shouldValidate: true })
+                  }}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition-colors focus:border-indigo-500"
+                  placeholder="123.456.789-01"
+                />
+                {errors.document && <p className="mt-1 text-xs text-red-400">{errors.document.message}</p>}
+              </div>
             </div>
 
             <div>

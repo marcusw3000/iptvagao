@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
+import Link from 'next/link'
 import { useAuth } from '@/lib/auth'
 
 const schema = z.object({
@@ -54,14 +55,14 @@ export default function LoginPage() {
         <h1 className="text-2xl font-bold text-white mb-2">IPTV Agão</h1>
         <p className="text-gray-400 mb-8">Faça login para continuar</p>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" autoComplete="off">
           <div>
-            <label className="block text-sm text-gray-300 mb-1">Usuário</label>
+            <label className="block text-sm text-gray-300 mb-1">Email</label>
             <input
               {...register('username')}
               className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-brand"
-              placeholder="admin"
-              autoComplete="username"
+              placeholder="Digite seu email"
+              autoComplete="off"
             />
             {errors.username && (
               <p className="text-red-400 text-sm mt-1">{errors.username.message}</p>
@@ -75,7 +76,7 @@ export default function LoginPage() {
               type="password"
               className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-brand"
               placeholder="••••••"
-              autoComplete="current-password"
+              autoComplete="off"
             />
             {errors.password && (
               <p className="text-red-400 text-sm mt-1">{errors.password.message}</p>
@@ -89,8 +90,16 @@ export default function LoginPage() {
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
+
+          <Link
+            href="/signup"
+            className="flex w-full items-center justify-center rounded-lg border border-gray-700 py-2.5 font-medium text-gray-200 transition-colors hover:bg-gray-800"
+          >
+            Registrar
+          </Link>
         </form>
       </div>
     </div>
   )
 }
+

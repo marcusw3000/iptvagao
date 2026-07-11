@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service'
 import { AbacatepayService } from '../abacatepay/abacatepay.service'
 import { CreatePaymentDto } from './dto/create-payment.dto'
 
+const ABACATEPAY_SUBSCRIPTION_CYCLE = 'MONTHLY' as const
+
 const PAYMENT_SELECT = {
   id: true,
   subscriptionId: true,
@@ -45,6 +47,8 @@ export class PaymentsService {
     subscriptionId: string,
     { page = 1, limit = 20 }: { page: number; limit: number },
   ) {
+    await this.syncPendingPaymentsBySubscription(subscriptionId)
+
     const skip = (page - 1) * limit
     const [data, total] = await Promise.all([
       this.prisma.payment.findMany({
@@ -122,36 +126,57 @@ export class PaymentsService {
       name: subscription.client.name,
       email: subscription.client.email,
       taxId: subscription.client.document ?? undefined,
-      phone: subscription.client.phone ?? undefined,
+      cellphone: subscription.client.phone ?? undefined,
     })
 
     const priceInCentavos = Math.round(Number(subscription.plan.price) * 100)
+    const abacatePlanId = `sub-${subscription.plan.id}`
+
     await this.abacatepay.ensureProduct({
-      id: subscription.plan.id,
+      id: abacatePlanId,
       name: subscription.plan.name,
       priceInCentavos,
+      cycle: ABACATEPAY_SUBSCRIPTION_CYCLE,
     })
 
     const payment = await this.prisma.payment.create({
       data: {
         subscriptionId,
         amount: subscription.plan.price,
-        method: PaymentMethod.pix,
+        method: PaymentMethod.credit_card,
         status: PaymentStatus.pending,
       },
       select: PAYMENT_SELECT,
     })
 
     const webUrl = (process.env.WEB_URL ?? 'http://localhost:3000').split(',')[0]
-    const clientSubUrl = `${webUrl}/clients/${subscription.client.id}/subscription`
+    const checkoutReturnUrl = `${webUrl}/signup/complete?paymentId=${payment.id}&clientId=${subscription.client.id}`
 
-    const checkout = await this.abacatepay.createCheckout({
-      customerId: customer.id,
-      planId: subscription.plan.id,
-      paymentId: payment.id,
-      returnUrl: clientSubUrl,
-      completionUrl: clientSubUrl,
-    })
+    let checkout: { id: string; url: string }
+    try {
+      checkout = await this.abacatepay.createSubscriptionCheckout({
+        customerId: customer.id,
+        planId: abacatePlanId,
+        paymentId: payment.id,
+        returnUrl: checkoutReturnUrl,
+        completionUrl: checkoutReturnUrl,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (!message.includes('PIX Automático is not available for this store')) {
+        throw error
+      }
+
+      this.logger.warn('Store without PIX automatic. Falling back to card-only subscription checkout.')
+      checkout = await this.abacatepay.createSubscriptionCheckout({
+        customerId: customer.id,
+        planId: abacatePlanId,
+        paymentId: payment.id,
+        returnUrl: checkoutReturnUrl,
+        completionUrl: checkoutReturnUrl,
+        methods: ['CARD'],
+      })
+    }
 
     await this.prisma.payment.update({
       where: { id: payment.id },
@@ -168,10 +193,8 @@ export class PaymentsService {
     const event = payload.event as string
     this.logger.log(`Webhook received: ${event}`)
 
-    if (event === 'checkout.completed') {
-      const data = payload.data as Record<string, unknown>
-      const checkout = data?.checkout as Record<string, unknown>
-      const externalId = (checkout?.externalId ?? data?.externalId) as string | undefined
+    if (event === 'checkout.completed' || event === 'subscription.completed' || event === 'billing.paid') {
+      const externalId = this.extractExternalId(payload)
       if (!externalId) return
 
       const payment = await this.prisma.payment.findUnique({ where: { id: externalId } })
@@ -193,6 +216,43 @@ export class PaymentsService {
           where: { id: payment.id },
           data: { status: PaymentStatus.refunded },
         })
+      }
+    }
+  }
+
+  private extractExternalId(payload: Record<string, unknown>) {
+    const data = payload.data as Record<string, unknown> | undefined
+    const checkout = data?.checkout as Record<string, unknown> | undefined
+    const subscription = data?.subscription as Record<string, unknown> | undefined
+    const billing = data?.billing as Record<string, unknown> | undefined
+
+    return (checkout?.externalId ??
+      subscription?.externalId ??
+      billing?.externalId ??
+      data?.externalId) as string | undefined
+  }
+
+  private async syncPendingPaymentsBySubscription(subscriptionId: string) {
+    const pendingPayments = await this.prisma.payment.findMany({
+      where: {
+        subscriptionId,
+        status: PaymentStatus.pending,
+        reference: { not: null },
+      },
+      select: { id: true, reference: true },
+      take: 10,
+    })
+
+    for (const payment of pendingPayments) {
+      if (!payment.reference) continue
+
+      try {
+        const checkout = await this.abacatepay.getCheckout(payment.reference)
+        if (checkout.status === 'PAID') {
+          await this.confirm(payment.id)
+        }
+      } catch (error) {
+        this.logger.warn(`Could not sync payment ${payment.id}: ${(error as Error).message}`)
       }
     }
   }

@@ -53,6 +53,11 @@ export class PublicSignupService {
   }
 
   async onboard(dto: CreatePublicSignupDto) {
+    const normalizedDocument = dto.document.replace(/\D/g, '')
+    if (!this.isValidCpf(normalizedDocument)) {
+      throw new BadRequestException('CPF invalido')
+    }
+
     const referral = await this.resolveReferralCode(dto.referralCode)
     if (!referral.valid) {
       throw new BadRequestException('Codigo de indicacao invalido')
@@ -71,7 +76,12 @@ export class PublicSignupService {
         name: dto.name,
         email: dto.email,
         phone: dto.phone,
+        document: normalizedDocument,
         resellerId: referral.resellerId,
+      }, {
+        username: dto.email.trim().toLowerCase(),
+        password: dto.password,
+        email: dto.email.trim().toLowerCase(),
       })
       clientId = client.id
 
@@ -132,5 +142,22 @@ export class PublicSignupService {
     } catch {
       throw new InternalServerErrorException('Falha ao reverter cadastro publico incompleto')
     }
+  }
+
+  private isValidCpf(value: string) {
+    if (!/^\d{11}$/.test(value) || /^(\d)\1{10}$/.test(value)) {
+      return false
+    }
+
+    const digits = value.split('').map(Number)
+    const calcCheckDigit = (sliceLength: number) => {
+      const sum = digits
+        .slice(0, sliceLength)
+        .reduce((acc, digit, index) => acc + digit * (sliceLength + 1 - index), 0)
+      const remainder = (sum * 10) % 11
+      return remainder === 10 ? 0 : remainder
+    }
+
+    return calcCheckDigit(9) === digits[9] && calcCheckDigit(10) === digits[10]
   }
 }

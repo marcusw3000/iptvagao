@@ -15,7 +15,7 @@ const mockPayment = {
   id: 'pay-1',
   subscriptionId: 'sub-1',
   amount: '99.90',
-  method: PaymentMethod.pix,
+  method: PaymentMethod.credit_card,
   status: PaymentStatus.pending,
   reference: null,
   paidAt: null,
@@ -32,7 +32,7 @@ const mockPlan = { id: 'plan-1', name: 'Premium', price: '99.90' }
 const mockSubscriptionFull = {
   ...{ id: 'sub-1', clientId: 'client-1', status: SubscriptionStatus.past_due },
   plan: mockPlan,
-  client: { id: 'client-1', name: 'Acme', email: 'acme@test.com', document: '12345678901', phone: null },
+  client: { id: 'client-1', name: 'Acme', email: 'acme@test.com', document: '52998224725', phone: null },
 }
 
 describe('PaymentsService', () => {
@@ -68,7 +68,8 @@ describe('PaymentsService', () => {
     abacatepay = {
       createCustomer: jest.fn().mockResolvedValue({ id: 'cust-1', name: 'Acme', email: 'acme@test.com' }),
       ensureProduct: jest.fn().mockResolvedValue(undefined),
-      createCheckout: jest.fn().mockResolvedValue({ id: 'chk-1', url: 'https://pay.abacatepay.com/chk-1' }),
+      createSubscriptionCheckout: jest.fn().mockResolvedValue({ id: 'chk-1', url: 'https://pay.abacatepay.com/chk-1' }),
+      getCheckout: jest.fn().mockResolvedValue({ id: 'chk-1', status: 'PENDING' }),
       verifyWebhookSignature: jest.fn().mockReturnValue(true),
     }
 
@@ -88,11 +89,11 @@ describe('PaymentsService', () => {
   })
 
   it('create returns payment with pending status', async () => {
-    const result = await service.create({
-      subscriptionId: 'sub-1',
-      amount: '99.90',
-      method: PaymentMethod.pix,
-    })
+      const result = await service.create({
+        subscriptionId: 'sub-1',
+        amount: '99.90',
+        method: PaymentMethod.credit_card,
+      })
     expect(result.id).toBe('pay-1')
     expect(result.status).toBe(PaymentStatus.pending)
   })
@@ -102,7 +103,7 @@ describe('PaymentsService', () => {
     await expect(service.create({
       subscriptionId: 'bad',
       amount: '99.90',
-      method: PaymentMethod.pix,
+      method: PaymentMethod.credit_card,
     })).rejects.toThrow(NotFoundException)
   })
 
@@ -117,6 +118,23 @@ describe('PaymentsService', () => {
   it('findBySubscription data contains correct subscriptionId', async () => {
     const result = await service.findBySubscription('sub-1', { page: 1, limit: 20 })
     expect(result.data[0].subscriptionId).toBe('sub-1')
+  })
+
+  it('findBySubscription syncs pending payment when checkout is already paid', async () => {
+    const pendingPaymentWithReference = {
+      ...mockPayment,
+      reference: 'bill-1',
+    }
+    prisma.payment.findMany
+      .mockResolvedValueOnce([{ id: 'pay-1', reference: 'bill-1' }])
+      .mockResolvedValueOnce([pendingPaymentWithReference])
+    prisma.payment.findUnique.mockResolvedValue(mockPayment)
+    abacatepay.getCheckout.mockResolvedValue({ id: 'bill-1', status: 'PAID' })
+
+    await service.findBySubscription('sub-1', { page: 1, limit: 20 })
+
+    expect(abacatepay.getCheckout).toHaveBeenCalledWith('bill-1')
+    expect(prisma.$transaction).toHaveBeenCalled()
   })
 
   it('confirm sets status to paid and paidAt', async () => {
@@ -184,8 +202,26 @@ describe('PaymentsService', () => {
     it('calls ensureProduct with price in centavos', async () => {
       await service.createCheckout('sub-1')
       expect(abacatepay.ensureProduct).toHaveBeenCalledWith(
-        expect.objectContaining({ priceInCentavos: 9990 }),
+        expect.objectContaining({ id: 'sub-plan-1', priceInCentavos: 9990, cycle: 'MONTHLY' }),
       )
+      expect(abacatepay.createSubscriptionCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ planId: 'sub-plan-1', paymentId: 'pay-1' }),
+      )
+    })
+
+    it('falls back to regular checkout when store has no automatic pix for subscriptions', async () => {
+      abacatepay.createSubscriptionCheckout.mockRejectedValueOnce(
+        new Error('AbacatePay /subscriptions/create: PIX Automático is not available for this store'),
+      )
+      abacatepay.createSubscriptionCheckout.mockResolvedValueOnce({ id: 'chk-card-1', url: 'https://pay.abacatepay.com/chk-card-1' })
+
+      const result = await service.createCheckout('sub-1')
+
+      expect(abacatepay.createSubscriptionCheckout).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ planId: 'sub-plan-1', paymentId: 'pay-1', methods: ['CARD'] }),
+      )
+      expect(result.checkoutUrl).toBe('https://pay.abacatepay.com/chk-card-1')
     })
 
     it('throws NotFoundException when subscription not found', async () => {
@@ -216,6 +252,18 @@ describe('PaymentsService', () => {
       const payload = { event: 'checkout.completed', data: { externalId: 'pay-1' } }
       await service.handleWebhook(payload, rawBody, 'sig')
       expect(prisma.$transaction).not.toHaveBeenCalled()
+    })
+
+    it('confirms payment on subscription.completed using nested externalId', async () => {
+      prisma.payment.findUnique.mockResolvedValue(mockPayment)
+      const payload = {
+        event: 'subscription.completed',
+        data: { subscription: { externalId: 'pay-1' } },
+      }
+
+      await service.handleWebhook(payload, rawBody, 'sig')
+
+      expect(prisma.$transaction).toHaveBeenCalled()
     })
   })
 })

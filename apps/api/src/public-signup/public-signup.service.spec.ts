@@ -95,12 +95,15 @@ describe('PublicSignupService', () => {
       name: 'Cliente Teste',
       email: 'cliente@test.com',
       phone: '11999999999',
+      document: '52998224725',
+      password: '123456',
       referralCode: 'vip123',
       planId: 'plan-1',
     })
 
     expect(clientsService.create).toHaveBeenCalledWith(
-      expect.objectContaining({ resellerId: 'res-1' }),
+      expect.objectContaining({ resellerId: 'res-1', document: '52998224725' }),
+      expect.objectContaining({ username: 'cliente@test.com', password: '123456', email: 'cliente@test.com' }),
     )
     expect(subscriptionsService.create).toHaveBeenCalledWith({
       clientId: 'client-1',
@@ -117,6 +120,8 @@ describe('PublicSignupService', () => {
       name: 'Cliente Teste',
       email: 'cliente@test.com',
       phone: '11999999999',
+      document: '52998224725',
+      password: '123456',
       referralCode: 'zzz',
       planId: 'plan-1',
     })).rejects.toThrow(BadRequestException)
@@ -129,8 +134,22 @@ describe('PublicSignupService', () => {
       name: 'Cliente Teste',
       email: 'cliente@test.com',
       phone: '11999999999',
+      document: '52998224725',
+      password: '123456',
       referralCode: 'vip123',
       planId: 'plan-x',
     })).rejects.toThrow(NotFoundException)
+  })
+
+  it('throws BadRequestException when cpf is invalid', async () => {
+    await expect(service.onboard({
+      name: 'Cliente Teste',
+      email: 'cliente@test.com',
+      phone: '11999999999',
+      document: '12345678901',
+      password: '123456',
+      referralCode: 'vip123',
+      planId: 'plan-1',
+    })).rejects.toThrow(BadRequestException)
   })
 })

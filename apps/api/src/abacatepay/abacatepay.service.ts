@@ -11,7 +11,10 @@ interface AbacateCheckout {
   id: string
   url: string
   status: string
+  externalId?: string | null
 }
+
+type AbacateProductCycle = 'WEEKLY' | 'MONTHLY' | 'SEMIANNUALLY' | 'ANNUALLY'
 
 @Injectable()
 export class AbacatepayService {
@@ -27,11 +30,23 @@ export class AbacatepayService {
     }
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    query?: Record<string, string>,
+  ): Promise<T> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 10_000)
     try {
-      const res = await fetch(`${this.baseUrl}${path}`, {
+      const url = new URL(`${this.baseUrl}${path}`)
+      if (query) {
+        for (const [key, value] of Object.entries(query)) {
+          url.searchParams.set(key, value)
+        }
+      }
+
+      const res = await fetch(url, {
         method,
         headers: this.headers,
         body: body ? JSON.stringify(body) : undefined,
@@ -49,18 +64,24 @@ export class AbacatepayService {
     name: string
     email: string
     taxId?: string
-    phone?: string
+    cellphone?: string
   }): Promise<AbacateCustomer> {
     return this.request<AbacateCustomer>('POST', '/customers/create', data)
   }
 
-  async ensureProduct(plan: { id: string; name: string; priceInCentavos: number }): Promise<void> {
+  async ensureProduct(plan: {
+    id: string
+    name: string
+    priceInCentavos: number
+    cycle?: AbacateProductCycle
+  }): Promise<void> {
     try {
       await this.request('POST', '/products/create', {
         externalId: plan.id,
         name: plan.name,
         price: plan.priceInCentavos,
         currency: 'BRL',
+        ...(plan.cycle ? { cycle: plan.cycle } : {}),
       })
     } catch (err) {
       // Product already exists — safe to continue
@@ -81,8 +102,30 @@ export class AbacatepayService {
       externalId: params.paymentId,
       returnUrl: params.returnUrl,
       completionUrl: params.completionUrl,
-      items: [{ externalId: params.planId, quantity: 1 }],
+      items: [{ id: params.planId, quantity: 1 }],
     })
+  }
+
+  async createSubscriptionCheckout(params: {
+    customerId: string
+    planId: string
+    paymentId: string
+    returnUrl: string
+    completionUrl: string
+    methods?: Array<'PIX' | 'CARD'>
+  }): Promise<AbacateCheckout> {
+    return this.request<AbacateCheckout>('POST', '/subscriptions/create', {
+      customerId: params.customerId,
+      methods: params.methods ?? ['PIX', 'CARD'],
+      externalId: params.paymentId,
+      returnUrl: params.returnUrl,
+      completionUrl: params.completionUrl,
+      items: [{ id: params.planId, quantity: 1 }],
+    })
+  }
+
+  async getCheckout(id: string): Promise<AbacateCheckout> {
+    return this.request<AbacateCheckout>('GET', '/checkouts/get', undefined, { id })
   }
 
   verifyWebhookSignature(rawBody: Buffer, signature: string): boolean {

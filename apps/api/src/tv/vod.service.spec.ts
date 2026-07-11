@@ -15,13 +15,13 @@ describe('VodService direct stream validation', () => {
     expect((service as any).normalizePlaybackUrl('udp://tracker.example')).toBeNull()
   })
 
-  it('does not emit magnet URLs for playback streams', () => {
+  it('preserves magnet URLs so the TV app can prepare torrent playback', () => {
     const stream = {
       title: 'Example',
       infoHash: 'abc123',
       url: 'magnet:?xt=urn:btih:abc123',
     }
 
-    expect((service as any).buildTorrentUrl(stream)).toBe('')
+    expect((service as any).buildTorrentUrl(stream)).toBe('magnet:?xt=urn:btih:abc123')
   })
 })
