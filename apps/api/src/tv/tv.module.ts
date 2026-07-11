@@ -9,9 +9,11 @@ import { DeviceAuthGuard } from './guards/device-auth.guard'
 import { ChannelsModule } from '../channels/channels.module'
 import { DevicesModule } from '../devices/devices.module'
 import { EpgModule } from '../epg/epg.module'
+import { TorrentEngineService } from './torrent-engine.service'
 
 @Module({
   imports: [
+    ConfigModule,
     ChannelsModule,
     DevicesModule,
     EpgModule,
@@ -24,7 +26,7 @@ import { EpgModule } from '../epg/epg.module'
     }),
   ],
   controllers: [TvController],
-  providers: [TvService, TorrentioService, VodService, DeviceAuthGuard],
-  exports: [TorrentioService],
+  providers: [TvService, TorrentioService, VodService, DeviceAuthGuard, TorrentEngineService],
+  exports: [TorrentioService, TorrentEngineService],
 })
 export class TvModule {}

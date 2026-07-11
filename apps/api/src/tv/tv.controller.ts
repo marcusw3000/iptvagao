@@ -1,8 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common'
+import { createReadStream } from 'fs'
+import { FastifyReply } from 'fastify'
 import { Throttle } from '@nestjs/throttler'
 import { TvService } from './tv.service'
 import { TorrentioService } from './torrentio.service'
 import { VodService } from './vod.service'
+import { TorrentEngineService } from './torrent-engine.service'
 import { ActivateDeviceDto } from './dto/activate-device.dto'
 import { Public } from '../common/decorators/public.decorator'
 import { DeviceAuthGuard, AuthenticatedDevice } from './guards/device-auth.guard'
@@ -13,6 +16,7 @@ export class TvController {
     private readonly tvService: TvService,
     private readonly torrentioService: TorrentioService,
     private readonly vodService: VodService,
+    private readonly torrentEngineService: TorrentEngineService,
   ) {}
 
   @Public()
@@ -87,6 +91,24 @@ export class TvController {
   @Get('torrentio/search')
   torrentioSearch(@Query('q') q: string) {
     return this.torrentioService.search(q)
+  }
+
+  @Public()
+  @UseGuards(DeviceAuthGuard)
+  @Get('torrent/prepare')
+  async prepareTorrent(@Query('source') source: string) {
+    return this.torrentEngineService.prepareStream(source)
+  }
+
+  @Public()
+  @UseGuards(DeviceAuthGuard)
+  @Get('torrent/file/:id')
+  async torrentFile(@Param('id') id: string, @Res({ passthrough: true }) reply: FastifyReply) {
+    const file = await this.torrentEngineService.getFile(id)
+    reply.header('Content-Type', file.mimeType)
+    reply.header('Cache-Control', 'no-store')
+    reply.header('Content-Disposition', `inline; filename="${file.fileName}"`)
+    return reply.send(createReadStream(file.filePath))
   }
 
   @Public()

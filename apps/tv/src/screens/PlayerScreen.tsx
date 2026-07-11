@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Hls from 'hls.js'
+import { api } from '../lib/api'
 import type { Channel } from '../types'
 
 interface Props {
@@ -17,26 +18,55 @@ export function PlayerScreen({ channel, onBack }: Props) {
     const video = videoRef.current
     if (!video) return
 
-    setStatus('loading')
+    let cancelled = false
     let hls: Hls | null = null
 
-    if (Hls.isSupported()) {
-      hls = new Hls()
-      hls.loadSource(channel.url)
-      hls.attachMedia(video)
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    const startPlayback = async (sourceUrl: string, mimeType?: string) => {
+      if (cancelled) return
+
+      setStatus('loading')
+
+      if (Hls.isSupported() && mimeType === 'application/vnd.apple.mpegurl') {
+        hls = new Hls()
+        hls.loadSource(sourceUrl)
+        hls.attachMedia(video)
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (!cancelled) video.play().catch(() => {})
+        })
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!cancelled && data.fatal) setStatus('error')
+        })
+      } else if (video.canPlayType(mimeType ?? 'video/mp4') || mimeType === 'video/mp4' || mimeType === 'video/webm') {
+        video.src = sourceUrl
         video.play().catch(() => {})
-      })
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) setStatus('error')
-      })
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = channel.url
-      video.play().catch(() => {})
-      video.addEventListener('error', () => setStatus('error'))
-    } else {
-      setStatus('error')
+        video.addEventListener('error', () => setStatus('error'))
+      } else {
+        setStatus('error')
+      }
     }
+
+    const loadSource = async () => {
+      if (channel.url.startsWith('magnet:') || channel.url.endsWith('.torrent')) {
+        try {
+          const response = await api.get('/tv/torrent/prepare', {
+            params: { source: channel.url },
+          })
+          const prepared = response.data
+          if (!cancelled && prepared?.streamUrl) {
+            await startPlayback(prepared.streamUrl, prepared.mimeType)
+          } else {
+            setStatus('error')
+          }
+        } catch {
+          setStatus('error')
+        }
+        return
+      }
+
+      await startPlayback(channel.url)
+    }
+
+    loadSource()
 
     function handlePlaying() {
       setStatus('playing')
@@ -44,6 +74,7 @@ export function PlayerScreen({ channel, onBack }: Props) {
     video.addEventListener('playing', handlePlaying)
 
     return () => {
+      cancelled = true
       video.removeEventListener('playing', handlePlaying)
       hls?.destroy()
     }

@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,9 +68,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -143,6 +147,12 @@ data class VodPlaybackItem(
     val url: String,
 )
 
+private data class PlayerTrackOption(
+    val group: Tracks.Group,
+    val trackIndex: Int,
+    val label: String,
+)
+
 data class VodDebugSelection(
     val title: String,
     val id: String,
@@ -160,6 +170,33 @@ private fun mapVodItem(dto: VodCatalogItemDto): VodItem {
         year = dto.year,
         genres = dto.genres,
     )
+}
+
+private fun buildTrackLabel(group: Tracks.Group, trackIndex: Int, fallbackPrefix: String): String {
+    val format = group.mediaTrackGroup.getFormat(trackIndex)
+    val language = format.language
+        ?.takeIf { it.isNotBlank() && !it.equals("und", ignoreCase = true) }
+        ?.replaceFirstChar { it.uppercase() }
+    val label = format.label?.takeIf { it.isNotBlank() }
+    val bitrate = format.bitrate.takeIf { it > 0 }?.let { "${it / 1000} kbps" }
+    return listOfNotNull(label, language, bitrate).firstOrNull()
+        ?: "$fallbackPrefix ${trackIndex + 1}"
+}
+
+private fun collectTrackOptions(tracks: Tracks, trackType: Int, fallbackPrefix: String): List<PlayerTrackOption> {
+    return tracks.groups
+        .filter { it.type == trackType }
+        .flatMap { group ->
+            (0 until group.length)
+                .filter { index -> group.isTrackSupported(index) }
+                .map { index ->
+                    PlayerTrackOption(
+                        group = group,
+                        trackIndex = index,
+                        label = buildTrackLabel(group, index, fallbackPrefix),
+                    )
+                }
+        }
 }
 
 private suspend fun loadVodCatalog(
@@ -951,20 +988,88 @@ private fun VodPlayerDialog(item: VodPlaybackItem, onExit: () -> Unit) {
     val context = LocalContext.current
     var showOverlay by remember { mutableStateOf(true) }
     var playbackError by remember { mutableStateOf<String?>(null) }
+    var isBuffering by remember { mutableStateOf(false) }
+    var isPlaying by remember { mutableStateOf(true) }
+    var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
+    var audioOptions by remember { mutableStateOf<List<PlayerTrackOption>>(emptyList()) }
+    var subtitleOptions by remember { mutableStateOf<List<PlayerTrackOption>>(emptyList()) }
+    var selectedAudioIndex by remember { mutableIntStateOf(0) }
+    var selectedSubtitleIndex by remember { mutableIntStateOf(-1) }
     val focusRequester = remember { FocusRequester() }
+    val isMagnet = remember(item.url) { item.url.startsWith("magnet:", ignoreCase = true) }
+    val currentResizeMode = resizeMode
 
     val player = remember(item.url) {
         ExoPlayer.Builder(context).build().apply { playWhenReady = true }
     }
 
+    fun syncTrackState(tracks: Tracks) {
+        val audios = collectTrackOptions(tracks, C.TRACK_TYPE_AUDIO, "Audio")
+        val subtitles = collectTrackOptions(tracks, C.TRACK_TYPE_TEXT, "Legenda")
+        audioOptions = audios
+        subtitleOptions = subtitles
+        selectedAudioIndex = audios.indexOfFirst { option -> option.group.isTrackSelected(option.trackIndex) }.coerceAtLeast(0)
+        selectedSubtitleIndex = subtitles.indexOfFirst { option -> option.group.isTrackSelected(option.trackIndex) }
+    }
+
+    fun applyAudioSelection(newIndex: Int) {
+        val option = audioOptions.getOrNull(newIndex) ?: return
+        val override = TrackSelectionOverride(option.group.mediaTrackGroup, option.trackIndex)
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            .addOverride(override)
+            .build()
+        selectedAudioIndex = newIndex
+    }
+
+    fun applySubtitleSelection(newIndex: Int) {
+        val builder = player.trackSelectionParameters
+            .buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+
+        if (newIndex < 0) {
+            player.trackSelectionParameters = builder
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+            selectedSubtitleIndex = -1
+            return
+        }
+
+        val option = subtitleOptions.getOrNull(newIndex) ?: return
+        val override = TrackSelectionOverride(option.group.mediaTrackGroup, option.trackIndex)
+        player.trackSelectionParameters = builder
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .addOverride(override)
+            .build()
+        selectedSubtitleIndex = newIndex
+    }
+
+    fun retryPlayback() {
+        playbackError = null
+        if (isMagnet) return
+        player.prepare()
+        player.playWhenReady = true
+    }
+
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = "Falha ao reproduzir este stream"
+                playbackError = if (isMagnet) "Este player nao suporta links magnet" else "Falha ao reproduzir este stream"
+                isBuffering = false
             }
 
             override fun onPlaybackStateChanged(state: Int) {
+                isBuffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) playbackError = null
+            }
+
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                syncTrackState(tracks)
             }
         }
 
@@ -977,10 +1082,15 @@ private fun VodPlayerDialog(item: VodPlaybackItem, onExit: () -> Unit) {
 
     LaunchedEffect(item.url) {
         playbackError = null
+        isBuffering = false
         player.stop()
         player.clearMediaItems()
-        player.setMediaItem(MediaItem.fromUri(item.url))
-        player.prepare()
+        if (isMagnet) {
+            playbackError = "Este player suporta apenas URLs diretas. Stream magnet exige uma engine separada."
+        } else {
+            player.setMediaItem(MediaItem.fromUri(item.url))
+            player.prepare()
+        }
         showOverlay = true
     }
 
@@ -1013,6 +1123,55 @@ private fun VodPlayerDialog(item: VodPlaybackItem, onExit: () -> Unit) {
                             showOverlay = !showOverlay
                             true
                         }
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                            if (player.isPlaying) player.pause() else player.play()
+                            showOverlay = true
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+                            showOverlay = true
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            val duration = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                            player.seekTo((player.currentPosition + 10_000).coerceAtMost(duration))
+                            showOverlay = true
+                            true
+                        }
+                        KeyEvent.KEYCODE_PROG_RED -> {
+                            resizeMode = if (resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+                                AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            } else {
+                                AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            }
+                            true
+                        }
+                        KeyEvent.KEYCODE_PROG_GREEN -> {
+                            if (audioOptions.isNotEmpty()) {
+                                applyAudioSelection((selectedAudioIndex + 1) % audioOptions.size)
+                                showOverlay = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        KeyEvent.KEYCODE_PROG_YELLOW -> {
+                            val nextIndex = when {
+                                subtitleOptions.isEmpty() -> -1
+                                selectedSubtitleIndex < 0 -> 0
+                                selectedSubtitleIndex >= subtitleOptions.lastIndex -> -1
+                                else -> selectedSubtitleIndex + 1
+                            }
+                            applySubtitleSelection(nextIndex)
+                            showOverlay = true
+                            true
+                        }
+                        KeyEvent.KEYCODE_R, KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                            retryPlayback()
+                            showOverlay = true
+                            true
+                        }
                         else -> false
                     }
                 },
@@ -1022,11 +1181,36 @@ private fun VodPlayerDialog(item: VodPlaybackItem, onExit: () -> Unit) {
                     PlayerView(it).apply {
                         this.player = player
                         useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        resizeMode = currentResizeMode
                     }
+                },
+                update = {
+                    it.player = player
+                    it.resizeMode = resizeMode
                 },
                 modifier = Modifier.fillMaxSize(),
             )
+
+            if (isBuffering) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = IptvColors.Surface.copy(alpha = 0.88f),
+                    modifier = Modifier.align(Alignment.Center),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 32.dp, vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        CircularProgressIndicator(color = IptvColors.Accent)
+                        Text(
+                            "Carregando stream...",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = IptvColors.TextPrimary,
+                        )
+                    }
+                }
+            }
 
             playbackError?.let { message ->
                 Surface(
@@ -1042,13 +1226,24 @@ private fun VodPlayerDialog(item: VodPlaybackItem, onExit: () -> Unit) {
                             message,
                             style = MaterialTheme.typography.headlineSmall,
                             color = IptvColors.TextPrimary,
+                            textAlign = TextAlign.Center,
                         )
-                        Text(
-                            "Pressione Voltar para retornar aos episódios",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = IptvColors.Accent,
+                        Row(
                             modifier = Modifier.padding(top = 10.dp),
-                        )
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            TvPillButton(
+                                label = "Tentar novamente",
+                                selected = false,
+                                enabled = !isMagnet,
+                                onClick = { retryPlayback() },
+                            )
+                            TvPillButton(
+                                label = "Fechar",
+                                selected = false,
+                                onClick = onExit,
+                            )
+                        }
                     }
                 }
             }
@@ -1058,7 +1253,7 @@ private fun VodPlayerDialog(item: VodPlaybackItem, onExit: () -> Unit) {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .height(180.dp)
+                        .height(240.dp)
                         .background(
                             Brush.verticalGradient(
                                 listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
@@ -1083,6 +1278,34 @@ private fun VodPlayerDialog(item: VodPlaybackItem, onExit: () -> Unit) {
                                 modifier = Modifier.padding(top = 4.dp),
                             )
                         }
+                        Text(
+                            listOfNotNull(
+                                if (player.isPlaying) "Reproduzindo" else "Pausado",
+                                if (isBuffering) "Buffer" else null,
+                                if (resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) "Zoom" else "Fit",
+                            ).joinToString(" • "),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = IptvColors.TextSecondary,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        Text(
+                            "Audio: ${audioOptions.getOrNull(selectedAudioIndex)?.label ?: "Padrao"}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = IptvColors.TextPrimary,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                        Text(
+                            "Legenda: ${subtitleOptions.getOrNull(selectedSubtitleIndex)?.label ?: "Desligada"}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = IptvColors.TextPrimary,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        Text(
+                            "OK mostra overlay • Esq/Dir busca 10s • Play pausa • Vermelho fit/zoom • Verde audio • Amarelo legenda",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = IptvColors.Accent,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
                     }
                 }
             }
