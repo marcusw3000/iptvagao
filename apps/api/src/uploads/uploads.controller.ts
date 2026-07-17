@@ -6,7 +6,7 @@ import { Roles } from '../common/decorators/roles.decorator'
 import { SupabaseService } from '../supabase/supabase.service'
 
 const ADMIN_ROLES = [UserRole.master_admin, UserRole.support]
-const ALLOWED_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']
+const ALLOWED_MIME = ['image/png', 'image/jpeg', 'image/webp']
 
 @Controller('uploads')
 @UseGuards(JwtAuthGuard)

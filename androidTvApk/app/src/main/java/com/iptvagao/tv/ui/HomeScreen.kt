@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -52,6 +54,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.iptvagao.tv.BuildConfig
 import com.iptvagao.tv.data.AppReleaseDto
 import com.iptvagao.tv.data.Session
 import com.iptvagao.tv.data.UpdateManager
@@ -71,6 +74,10 @@ fun HomeScreen(
     var updateError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val liveFocusRequester = remember { FocusRequester() }
+    val favoritesFocusRequester = remember { FocusRequester() }
+    val vodFocusRequester = remember { FocusRequester() }
+    val accountFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         availableUpdate = UpdateManager.checkForUpdate()
@@ -82,8 +89,8 @@ fun HomeScreen(
         scope.launch {
             try {
                 UpdateManager.downloadAndInstall(context, release) { progress -> downloadProgress = progress }
-            } catch (e: Exception) {
-                updateError = "Falha ao baixar atualização. Tente novamente."
+            } catch (_: Exception) {
+                updateError = "Falha ao baixar atualizacao. Tente novamente."
             } finally {
                 downloading = false
             }
@@ -99,11 +106,10 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 64.dp)
-                // Segurança: em telas menores/mais densas o conteúdo (tiles + banner de update) pode não caber
                 .verticalScroll(rememberScrollState()),
         ) {
             Text(
-                "Olá, ${session.deviceName ?: "TV"}",
+                "Ola, ${session.deviceName ?: "TV"}",
                 style = MaterialTheme.typography.headlineMedium,
                 color = IptvColors.TextPrimary,
                 modifier = Modifier.padding(top = 28.dp),
@@ -115,37 +121,74 @@ fun HomeScreen(
                 modifier = Modifier.padding(top = 4.dp, bottom = 20.dp),
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                HomeTile(
-                    title = "TV ao Vivo",
-                    icon = Icons.Filled.Tv,
-                    modifier = Modifier.size(width = 260.dp, height = 260.dp),
-                    autoFocus = true,
-                    onClick = onSelectLive,
+            val mandatoryUpdate = availableUpdate?.takeIf { it.mandatory }
+            if (mandatoryUpdate != null) {
+                MandatoryUpdatePanel(
+                    release = mandatoryUpdate,
+                    downloading = downloading,
+                    progress = downloadProgress,
+                    error = updateError,
+                    onUpdateClick = { startUpdate(mandatoryUpdate) },
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     HomeTile(
-                        title = "Favoritos",
-                        icon = Icons.Filled.Star,
-                        modifier = Modifier.size(width = 260.dp, height = 122.dp),
-                        onClick = onSelectFavorites,
+                        title = "TV ao Vivo",
+                        icon = Icons.Filled.Tv,
+                        modifier = Modifier
+                            .size(width = 260.dp, height = 260.dp)
+                            .focusProperties {
+                                right = favoritesFocusRequester
+                                down = vodFocusRequester
+                            },
+                        focusRequester = liveFocusRequester,
+                        autoFocus = true,
+                        onClick = onSelectLive,
                     )
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        HomeTile(
+                            title = "Favoritos",
+                            icon = Icons.Filled.Star,
+                            modifier = Modifier
+                                .size(width = 260.dp, height = 122.dp)
+                                .focusProperties {
+                                    left = liveFocusRequester
+                                    right = accountFocusRequester
+                                    down = vodFocusRequester
+                                },
+                            focusRequester = favoritesFocusRequester,
+                            onClick = onSelectFavorites,
+                        )
+                        HomeTile(
+                            title = "Filmes & Series",
+                            icon = Icons.Filled.Movie,
+                            modifier = Modifier
+                                .size(width = 260.dp, height = 122.dp)
+                                .focusProperties {
+                                    up = favoritesFocusRequester
+                                    left = liveFocusRequester
+                                    right = accountFocusRequester
+                                },
+                            focusRequester = vodFocusRequester,
+                            onClick = onSelectVod,
+                        )
+                    }
                     HomeTile(
-                        title = "Filmes & Séries",
-                        icon = Icons.Filled.Movie,
-                        modifier = Modifier.size(width = 260.dp, height = 122.dp),
-                        onClick = onSelectVod,
+                        title = "Conta",
+                        icon = Icons.Filled.AccountCircle,
+                        modifier = Modifier
+                            .size(width = 260.dp, height = 260.dp)
+                            .focusProperties {
+                                left = favoritesFocusRequester
+                                down = vodFocusRequester
+                            },
+                        focusRequester = accountFocusRequester,
+                        onClick = onSelectAccount,
                     )
                 }
-                HomeTile(
-                    title = "Conta",
-                    icon = Icons.Filled.AccountCircle,
-                    modifier = Modifier.size(width = 260.dp, height = 260.dp),
-                    onClick = onSelectAccount,
-                )
             }
 
-            availableUpdate?.let { release ->
+            availableUpdate?.takeIf { !it.mandatory }?.let { release ->
                 UpdateBanner(
                     release = release,
                     downloading = downloading,
@@ -156,6 +199,95 @@ fun HomeScreen(
             }
 
             Box(Modifier.padding(bottom = 20.dp))
+        }
+    }
+}
+
+@Composable
+private fun MandatoryUpdatePanel(
+    release: AppReleaseDto,
+    downloading: Boolean,
+    progress: Float,
+    error: String?,
+    onUpdateClick: () -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        if (!downloading) {
+          runCatching { focusRequester.requestFocus() }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(IptvColors.Surface)
+            .border(1.dp, IptvColors.Accent.copy(alpha = 0.4f), RoundedCornerShape(24.dp))
+            .padding(horizontal = 28.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            Icons.Filled.SystemUpdate,
+            contentDescription = null,
+            tint = IptvColors.Accent,
+            modifier = Modifier.size(44.dp),
+        )
+        Text(
+            "Atualizacao obrigatoria disponivel",
+            style = MaterialTheme.typography.headlineSmall,
+            color = IptvColors.TextPrimary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            "Versao instalada: ${BuildConfig.VERSION_NAME} · Nova versao: ${release.versionName}",
+            style = MaterialTheme.typography.bodyLarge,
+            color = IptvColors.TextSecondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Text(
+            "Este app precisa ser atualizado antes de continuar usando TV ao vivo, favoritos ou filmes e series.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = IptvColors.TextSecondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        release.changelog?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = IptvColors.Accent,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+        if (downloading) {
+            LinearProgressIndicator(
+                progress = { progress },
+                color = IptvColors.Accent,
+                modifier = Modifier.padding(top = 18.dp).fillMaxWidth(),
+            )
+        } else {
+            Button(
+                onClick = onUpdateClick,
+                modifier = Modifier
+                    .padding(top = 18.dp)
+                    .focusRequester(focusRequester),
+            ) {
+                Text("Atualizar agora")
+            }
+        }
+        error?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFF87171),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 10.dp),
+            )
         }
     }
 }
@@ -178,7 +310,7 @@ private fun UpdateBanner(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                if (release.mandatory) "Atualização obrigatória disponível: ${release.versionName}" else "Atualização disponível: ${release.versionName}",
+                "Atualizacao disponivel: ${release.versionName}",
                 style = MaterialTheme.typography.bodyLarge,
                 color = IptvColors.TextPrimary,
             )
@@ -209,6 +341,7 @@ private fun HomeTile(
     title: String,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
     autoFocus: Boolean = false,
     onClick: () -> Unit,
 ) {
@@ -219,10 +352,10 @@ private fun HomeTile(
         animationSpec = tween(durationMillis = 180),
         label = "tileScale",
     )
-    val focusRequester = remember { FocusRequester() }
+    val resolvedFocusRequester = focusRequester ?: remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        if (autoFocus) focusRequester.requestFocus()
+        if (autoFocus) resolvedFocusRequester.requestFocus()
     }
 
     Column(
@@ -235,7 +368,7 @@ private fun HomeTile(
                 color = if (focused) IptvColors.Accent else Color.Transparent,
                 shape = RoundedCornerShape(16.dp),
             )
-            .focusRequester(focusRequester)
+            .focusRequester(resolvedFocusRequester)
             .focusable(interactionSource = interaction)
             .onKeyEvent { event ->
                 val isSelectKey = event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||

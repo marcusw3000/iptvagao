@@ -38,4 +38,21 @@ describe('TorrentEngineService', () => {
     expect(result.fileName).toBe('video.mp4')
     expect(result.mimeType).toBe('video/mp4')
   })
+
+  it('bloqueia arquivo de torrent que tenta escapar do diretorio de download', async () => {
+    const service = new TorrentEngineService(
+      {
+        get: jest.fn().mockReturnValue('/tmp/iptvagao-torrents'),
+      } as unknown as ConfigService,
+      {
+        download: jest.fn().mockResolvedValue({
+          files: [{ path: '../escape.mp4' }],
+          done: true,
+          once: jest.fn(),
+        }),
+      } as any,
+    )
+
+    await expect(service.prepareStream('magnet:?xt=urn:btih:abc123')).rejects.toThrow('Caminho de torrent invalido')
+  })
 })

@@ -38,6 +38,10 @@ describe('EpgService', () => {
   })
 
   describe('importFromXmltv', () => {
+    it('blocks localhost feeds', async () => {
+      await expect(service.importFromXmltv('http://127.0.0.1/epg.xml')).rejects.toThrow(BadRequestException)
+    })
+
     it('throws when the feed cannot be fetched', async () => {
       global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 })
       await expect(service.importFromXmltv('http://x/epg.xml')).rejects.toThrow(BadRequestException)

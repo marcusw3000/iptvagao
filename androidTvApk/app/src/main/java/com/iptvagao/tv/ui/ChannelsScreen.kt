@@ -44,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -60,7 +62,10 @@ import coil.compose.SubcomposeAsyncImage
 import com.iptvagao.tv.data.Api
 import com.iptvagao.tv.data.ChannelDto
 import com.iptvagao.tv.data.Session
+import com.iptvagao.tv.data.TvApiError
+import com.iptvagao.tv.data.toTvApiError
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 
 private const val FAVORITES_KEY = "Favoritos"
 private const val SEARCH_RESULTS_KEY = "Resultados"
@@ -68,7 +73,7 @@ private const val SEARCH_RESULTS_KEY = "Resultados"
 @Composable
 fun ChannelsScreen(
     session: Session,
-    onSessionExpired: () -> Unit,
+    onSessionExpired: (TvApiError?) -> Unit,
     startWithFavoritesOnly: Boolean = false,
     onPlay: (channels: List<ChannelDto>, index: Int) -> Unit,
 ) {
@@ -84,18 +89,20 @@ fun ChannelsScreen(
         channels = null
         try {
             channels = Api.service.channels(session.bearer ?: "")
-        } catch (e: retrofit2.HttpException) {
+        } catch (e: HttpException) {
+            val apiError = e.toTvApiError()
             if (e.code() == 401) {
                 session.clear()
-                onSessionExpired()
+                onSessionExpired(apiError)
                 return@LaunchedEffect
             }
-            error = when (e.code()) {
-                403 -> "Assinatura suspensa ou cancelada."
-                else -> "Erro ao carregar canais (${e.code()})."
+            error = when (apiError.code) {
+                "SUBSCRIPTION_INACTIVE" -> "Assinatura suspensa ou cancelada."
+                "TV_LIMIT_REACHED" -> apiError.message ?: "Limite de TVs atingido."
+                else -> apiError.message ?: "Erro ao carregar canais (${e.code()})."
             }
-        } catch (e: Exception) {
-            error = "Sem conexão com o servidor."
+        } catch (_: Exception) {
+            error = "Sem conexao com o servidor."
         }
     }
 
@@ -107,9 +114,18 @@ fun ChannelsScreen(
         scope.launch {
             try {
                 val bearer = session.bearer ?: ""
-                if (nextValue) Api.service.addFavorite(bearer, channelId) else Api.service.removeFavorite(bearer, channelId)
-            } catch (e: Exception) {
-                // reverte em caso de falha de rede
+                if (nextValue) {
+                    Api.service.addFavorite(bearer, channelId)
+                } else {
+                    Api.service.removeFavorite(bearer, channelId)
+                }
+            } catch (e: HttpException) {
+                channels = channels?.map { if (it.id == channelId) it.copy(isFavorite = !nextValue) else it }
+                if (e.code() == 401) {
+                    session.clear()
+                    onSessionExpired(e.toTvApiError())
+                }
+            } catch (_: Exception) {
                 channels = channels?.map { if (it.id == channelId) it.copy(isFavorite = !nextValue) else it }
             }
         }
@@ -127,7 +143,7 @@ fun ChannelsScreen(
             channels == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = IptvColors.Accent)
             }
-            channels!!.isEmpty() -> CenterMessage("Nenhum canal disponível no seu plano.", onRetry = { attempt++ })
+            channels!!.isEmpty() -> CenterMessage("Nenhum canal disponivel no seu plano.", onRetry = { attempt++ })
             else -> ChannelGrid(
                 channels = channels!!,
                 query = query,
@@ -143,6 +159,14 @@ fun ChannelsScreen(
 
 @Composable
 private fun CenterMessage(message: String, onRetry: (() -> Unit)? = null) {
+    val retryFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(onRetry) {
+        if (onRetry != null) {
+            retryFocusRequester.requestFocus()
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -155,7 +179,12 @@ private fun CenterMessage(message: String, onRetry: (() -> Unit)? = null) {
             textAlign = TextAlign.Center,
         )
         if (onRetry != null) {
-            Button(onClick = onRetry, modifier = Modifier.padding(top = 24.dp)) {
+            Button(
+                onClick = onRetry,
+                modifier = Modifier
+                    .padding(top = 24.dp)
+                    .focusRequester(retryFocusRequester),
+            ) {
                 Text("Tentar novamente")
             }
         }
@@ -173,10 +202,8 @@ private fun ChannelGrid(
     onToggleFavorite: (String) -> Unit,
 ) {
     val searching = query.isNotBlank()
+    val searchFocusRequester = remember { FocusRequester() }
 
-    // Enquanto busca: lista plana filtrada por nome, em várias linhas de 6.
-    // Modo favoritos (vindo do tile "Favoritos" no Home): só a seção de favoritos.
-    // Sem busca/filtro: seção fixa de Favoritos (se houver) + categorias, como antes.
     val sections = remember(channels, query, favoritesOnly) {
         if (searching) {
             val filtered = channels.filter { it.name.contains(query, ignoreCase = true) }
@@ -215,18 +242,21 @@ private fun ChannelGrid(
                         )
                     }
                     if (favoritesOnly) {
-                        Text(
-                            "Ver todos os canais",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = IptvColors.Accent,
+                        FocusableTextAction(
+                            label = "Ver todos os canais",
+                            onClick = onExitFavoritesOnly,
                             modifier = Modifier
                                 .padding(top = 4.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .clickable(onClick = onExitFavoritesOnly),
+                                .focusRequester(searchFocusRequester),
                         )
                     }
                 }
-                SearchField(query = query, onQueryChange = onQueryChange)
+                SearchField(
+                    query = query,
+                    onQueryChange = onQueryChange,
+                    focusRequester = if (favoritesOnly) null else searchFocusRequester,
+                    autoFocus = !favoritesOnly,
+                )
             }
         }
 
@@ -244,7 +274,7 @@ private fun ChannelGrid(
         if (favoritesOnly && !searching && sections.isEmpty()) {
             item {
                 Text(
-                    "Nenhum favorito ainda. Segure OK num canal pra favoritar.",
+                    "Nenhum favorito ainda. Segure OK num canal para adicionar aos favoritos.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = IptvColors.TextSecondary,
                     modifier = Modifier.padding(top = 24.dp),
@@ -300,7 +330,6 @@ private fun ChannelRow(
 ) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
-        // Respiro pro scale 1.08 não cortar nas bordas
         contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp),
     ) {
         items(visible, key = { it.id }) { channel ->
@@ -314,10 +343,22 @@ private fun ChannelRow(
 }
 
 @Composable
-private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    focusRequester: FocusRequester? = null,
+    autoFocus: Boolean = false,
+) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val resolvedFocusRequester = focusRequester ?: remember { FocusRequester() }
+
+    LaunchedEffect(autoFocus) {
+        if (autoFocus) {
+            resolvedFocusRequester.requestFocus()
+        }
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -340,13 +381,13 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
                 singleLine = true,
                 textStyle = TextStyle(color = IptvColors.TextPrimary, fontSize = 16.sp),
                 cursorBrush = androidx.compose.ui.graphics.SolidColor(IptvColors.Accent),
-                interactionSource = interaction,
-                modifier = Modifier
+                 interactionSource = interaction,
+                 modifier = Modifier
+                    .focusRequester(resolvedFocusRequester)
                     .fillMaxWidth()
-                    // D-pad para baixo sai do campo e vai pro grid de canais
-                    // onPreviewKeyEvent (top-down) intercepta ANTES do BasicTextField consumir a tecla
                     .onPreviewKeyEvent { event ->
-                        if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                        if (
+                            event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
                             event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
                         ) {
                             focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
@@ -367,6 +408,29 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
 }
 
 @Composable
+private fun FocusableTextAction(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+
+    Text(
+        label,
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (focused) IptvColors.TextPrimary else IptvColors.Accent,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (focused) IptvColors.SurfaceFocused else Color.Transparent)
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) IptvColors.Accent else Color.Transparent,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .focusable(interactionSource = interaction)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    )
+}
+
+@Composable
 private fun ChannelCard(channel: ChannelDto, onClick: () -> Unit, onLongClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -375,7 +439,6 @@ private fun ChannelCard(channel: ChannelDto, onClick: () -> Unit, onLongClick: (
         animationSpec = tween(durationMillis = 180),
         label = "cardScale",
     )
-    // Marca se o long-press já foi disparado nesta pressão, pra não também disparar o click no ACTION_UP
     var longPressHandled by remember { mutableStateOf(false) }
 
     Box(
@@ -396,7 +459,6 @@ private fun ChannelCard(channel: ChannelDto, onClick: () -> Unit, onLongClick: (
                 if (!isSelectKey) return@onKeyEvent false
                 when (event.nativeKeyEvent.action) {
                     KeyEvent.ACTION_DOWN -> {
-                        // O sistema marca isLongPress() num DOWN repetido após o long-press timeout
                         if (event.nativeKeyEvent.isLongPress) {
                             longPressHandled = true
                             onLongClick()
@@ -469,7 +531,6 @@ fun ChannelLogo(channel: ChannelDto, size: androidx.compose.ui.unit.Dp) {
     )
 }
 
-// Logo quebrada/ausente: monograma com a inicial do canal
 @Composable
 private fun LogoFallback(name: String, size: androidx.compose.ui.unit.Dp) {
     Box(

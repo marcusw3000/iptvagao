@@ -1,6 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateChannelDto, UpdateChannelDto } from './dto/create-channel.dto'
+import { assertSafeRemoteUrl } from '../common/security/remote-url'
+import { tvErrors } from '../tv/tv.errors'
 
 interface M3uEntry {
   name: string
@@ -104,7 +106,7 @@ export class ChannelsService {
     })
     if (!subscription) return []
     if (subscription.status === 'suspended' || subscription.status === 'cancelled') {
-      throw new ForbiddenException('Assinatura suspensa ou cancelada')
+      throw tvErrors.subscriptionInactive()
     }
 
     return this.prisma.channel.findMany({
@@ -175,11 +177,12 @@ export class ChannelsService {
   }
 
   async importFromM3u(m3uUrl: string) {
+    const safeUrl = assertSafeRemoteUrl(m3uUrl, process.env.M3U_IMPORT_ALLOWLIST)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 30_000)
     let text: string
     try {
-      const res = await fetch(m3uUrl, { signal: controller.signal })
+      const res = await fetch(safeUrl, { signal: controller.signal })
       if (!res.ok) throw new BadRequestException(`Falha ao buscar M3U: ${res.status}`)
       text = await res.text()
     } catch (e: any) {

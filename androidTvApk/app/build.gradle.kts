@@ -11,6 +11,11 @@ val apiBaseUrl = (project.findProperty("apiBaseUrl") as String?)?.trim()?.takeIf
         "prod" -> (project.findProperty("apiBaseUrlProd") as String? ?: "https://api.example.com/api/v1")
         else -> (project.findProperty("apiBaseUrlLocal") as String? ?: "http://10.0.2.2:3001/api/v1")
     }
+val updateChannel = when (apiEnv) {
+    "staging" -> "staging"
+    "prod" -> "prod"
+    else -> "local"
+}
 
 android {
     namespace = "com.iptvagao.tv"
@@ -25,6 +30,7 @@ android {
 
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("String", "API_ENVIRONMENT", "\"$apiEnv\"")
+        buildConfigField("String", "UPDATE_CHANNEL", "\"$updateChannel\"")
     }
 
     buildTypes {

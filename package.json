@@ -18,5 +18,12 @@
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
   },
-  "packageManager": "pnpm@9.0.0"
+  "packageManager": "pnpm@9.0.0",
+  "pnpm": {
+    "overrides": {
+      "@fastify/middie": "8.3.3",
+      "lodash": "^4.17.23",
+      "tar": "^7.5.16"
+    }
+  }
 }

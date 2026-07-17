@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { assertSafeRemoteUrl } from '../common/security/remote-url'
 
 interface XmltvProgramme {
   tvgId: string
@@ -66,11 +67,12 @@ export class EpgService {
   }
 
   async importFromXmltv(url: string) {
+    const safeUrl = assertSafeRemoteUrl(url, process.env.EPG_IMPORT_ALLOWLIST)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 60_000)
     let xml: string
     try {
-      const res = await fetch(url, { signal: controller.signal })
+      const res = await fetch(safeUrl, { signal: controller.signal })
       if (!res.ok) throw new BadRequestException(`Falha ao buscar XMLTV: ${res.status}`)
       xml = await res.text()
     } catch (e: any) {

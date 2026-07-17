@@ -1,7 +1,11 @@
 package com.iptvagao.tv.data
 
 import com.iptvagao.tv.BuildConfig
+import android.os.Build
 import okhttp3.OkHttpClient
+import okhttp3.Interceptor
+import org.json.JSONObject
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
@@ -70,6 +74,7 @@ data class AccountResponse(
 )
 
 data class AppReleaseDto(
+    val channel: String,
     val versionCode: Int,
     val versionName: String,
     val apkUrl: String,
@@ -173,6 +178,43 @@ data class TorrentPreparationResponse(
     val message: String?,
 )
 
+data class TvApiError(
+    val statusCode: Int,
+    val code: String?,
+    val message: String?,
+)
+
+fun HttpException.toTvApiError(): TvApiError {
+    val raw = try {
+        response()?.errorBody()?.string()
+    } catch (_: Exception) {
+        null
+    }
+
+    if (raw.isNullOrBlank()) {
+        return TvApiError(
+            statusCode = code(),
+            code = null,
+            message = message(),
+        )
+    }
+
+    return try {
+        val json = JSONObject(raw)
+        TvApiError(
+            statusCode = code(),
+            code = json.optString("code").takeIf { it.isNotBlank() },
+            message = json.optString("message").takeIf { it.isNotBlank() } ?: raw,
+        )
+    } catch (_: Exception) {
+        TvApiError(
+            statusCode = code(),
+            code = null,
+            message = raw,
+        )
+    }
+}
+
 // --- Retrofit service ---
 
 interface TvApi {
@@ -195,7 +237,7 @@ interface TvApi {
     suspend fun account(@Header("Authorization") bearer: String): AccountResponse
 
     @GET("app-releases/latest")
-    suspend fun latestRelease(): AppReleaseDto
+    suspend fun latestRelease(@Query("channel") channel: String): AppReleaseDto
 
     @GET("tv/torrentio/manifest")
     suspend fun torrentioManifest(@Header("Authorization") bearer: String): TorrentioManifestResponse
@@ -259,7 +301,24 @@ interface TvApi {
 }
 
 object Api {
+    private val deviceUserAgent = buildString {
+        append("iptvagao-tv/")
+        append(BuildConfig.VERSION_NAME)
+        append(" (")
+        append(Build.MODEL ?: "Android TV")
+        append(") env/")
+        append(BuildConfig.API_ENVIRONMENT)
+    }
+
     private val client = OkHttpClient.Builder()
+        .addInterceptor(Interceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", deviceUserAgent)
+                .header("X-App-Version", BuildConfig.VERSION_NAME)
+                .header("X-App-Version-Code", BuildConfig.VERSION_CODE.toString())
+                .build()
+            chain.proceed(request)
+        })
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()

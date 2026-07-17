@@ -1,3 +1,4 @@
+import { AppReleaseChannel } from '@prisma/client'
 import { BadRequestException, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 
@@ -28,22 +29,25 @@ export class GithubReleasesService {
   }
 
   async publishApk(
+    channel: AppReleaseChannel,
     versionCode: number,
     versionName: string,
     changelog: string | undefined,
     file: { buffer: Buffer; filename: string; mimetype: string },
   ): Promise<string> {
-    const tag = `app-v${versionCode}`
+    const tag = `app-${channel}-v${versionCode}`
+    const releaseName = `App ${channel} ${versionName}`
+    const assetName = `${channel}-${file.filename}`
 
     const releaseRes = await fetch(`https://api.github.com/repos/${this.repo}/releases`, {
       method: 'POST',
       headers: { ...this.headers(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tag_name: tag,
-        name: `App ${versionName}`,
+        name: releaseName,
         body: changelog ?? '',
         draft: false,
-        prerelease: false,
+        prerelease: channel !== 'prod',
       }),
     })
     if (!releaseRes.ok) {
@@ -51,7 +55,7 @@ export class GithubReleasesService {
     }
     const release = (await releaseRes.json()) as GithubReleaseResponse
 
-    const uploadUrl = `https://uploads.github.com/repos/${this.repo}/releases/${release.id}/assets?name=${encodeURIComponent(file.filename)}`
+    const uploadUrl = `https://uploads.github.com/repos/${this.repo}/releases/${release.id}/assets?name=${encodeURIComponent(assetName)}`
     const assetRes = await fetch(uploadUrl, {
       method: 'POST',
       headers: {

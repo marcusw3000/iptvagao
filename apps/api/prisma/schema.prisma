@@ -48,6 +48,12 @@ enum WithdrawalStatus {
   rejected
 }
 
+enum AppReleaseChannel {
+  local
+  staging
+  prod
+}
+
 model Plan {
   id              String   @id @default(cuid())
   name            String
@@ -84,6 +90,7 @@ model Client {
   subscription  Subscription?
   devices       Device[]
   alerts        Alert[]
+  favorites     Favorite[]
 
   @@index([resellerId])
   @@map("clients")
@@ -206,7 +213,6 @@ model Device {
   updatedAt      DateTime  @updatedAt
 
   client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  favorites Favorite[]
 
   @@index([clientId])
   @@map("devices")
@@ -249,15 +255,15 @@ model Channel {
 
 model Favorite {
   id        String   @id @default(cuid())
-  deviceId  String
+  clientId  String
   channelId String
   createdAt DateTime @default(now())
 
-  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
-  @@unique([deviceId, channelId])
-  @@index([deviceId])
+  @@unique([clientId, channelId])
+  @@index([clientId])
   @@map("favorites")
 }
 
@@ -295,13 +301,16 @@ model Alert {
 }
 
 model AppRelease {
-  id          String   @id @default(cuid())
-  versionCode Int      @unique
+  id          String            @id @default(cuid())
+  channel     AppReleaseChannel @default(prod)
+  versionCode Int
   versionName String
   apkUrl      String
   changelog   String?
-  mandatory   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  mandatory   Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+
+  @@unique([channel, versionCode])
 
   @@map("app_releases")
 }

@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common'
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common'
 import { TorrentioService, TorrentioStreamItem } from './torrentio.service'
 
 export interface VodCatalogItemDto {
@@ -85,6 +85,7 @@ interface CinemetaMetaResponse {
 
 @Injectable()
 export class VodService {
+  private readonly logger = new Logger(VodService.name)
   private readonly baseUrl = 'https://v3-cinemeta.strem.io'
   private readonly userAgent = 'Mozilla/5.0 (compatible; iptvagao/1.0)'
   private readonly torrentioService: TorrentioService
@@ -507,16 +508,16 @@ export class VodService {
             found.set(result.id, { type, title })
           }
         }
-      } catch (error) {
-        console.warn('Torrentio search fallback failed', { query, error: (error as Error).message })
+      } catch {
+        this.logger.warn('Torrentio search fallback failed')
       }
     }
 
     return Array.from(found.entries()).map(([id, value]) => ({ id, type: value.type, title: value.title }))
   }
 
-  async streams(id: string): Promise<VodStreamDto[]> {
-    const debug = await this.streamsDebug(id)
+  async streams(id: string, videoId?: string, type?: string): Promise<VodStreamDto[]> {
+    const debug = await this.streamsDebug(id, videoId, type)
     return debug.streams
   }
 

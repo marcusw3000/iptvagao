@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing'
-import { ForbiddenException, NotFoundException } from '@nestjs/common'
+import { BadRequestException, NotFoundException } from '@nestjs/common'
 import { ChannelsService } from './channels.service'
 import { PrismaService } from '../prisma/prisma.service'
 
@@ -97,7 +97,13 @@ describe('ChannelsService', () => {
 
   it('findForClient throws ForbiddenException for suspended subscription', async () => {
     prisma.subscription.findUnique.mockResolvedValue({ status: 'suspended', planId: 'plan-1' })
-    await expect(service.findForClient('client-1')).rejects.toThrow(ForbiddenException)
+    await expect(service.findForClient('client-1')).rejects.toMatchObject({
+      response: {
+        code: 'SUBSCRIPTION_INACTIVE',
+        message: 'Assinatura suspensa ou cancelada',
+      },
+      status: 403,
+    })
   })
 
   it('findForClient returns channels available for the client plan', async () => {
@@ -145,5 +151,9 @@ describe('ChannelsService', () => {
   it('remove throws NotFoundException for unknown id', async () => {
     prisma.channel.findUnique.mockResolvedValue(null)
     await expect(service.remove('bad')).rejects.toThrow(NotFoundException)
+  })
+
+  it('blocks localhost M3U imports', async () => {
+    await expect(service.importFromM3u('http://127.0.0.1/list.m3u')).rejects.toThrow(BadRequestException)
   })
 })

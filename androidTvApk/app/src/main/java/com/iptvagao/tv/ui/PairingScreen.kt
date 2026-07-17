@@ -31,6 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -45,7 +48,9 @@ import androidx.compose.ui.unit.sp
 import com.iptvagao.tv.data.ActivateRequest
 import com.iptvagao.tv.data.Api
 import com.iptvagao.tv.data.Session
+import com.iptvagao.tv.data.toTvApiError
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 
 private const val CODE_LENGTH = 6
 
@@ -56,6 +61,12 @@ fun PairingScreen(session: Session, onActivated: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+    val codeFocusRequester = remember { FocusRequester() }
+    val activateFocusRequester = remember { FocusRequester() }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        codeFocusRequester.requestFocus()
+    }
 
     fun activate() {
         if (code.length != CODE_LENGTH || loading) return
@@ -69,8 +80,14 @@ fun PairingScreen(session: Session, onActivated: () -> Unit) {
                 session.token = res.token
                 session.deviceName = res.deviceName
                 onActivated()
-            } catch (e: Exception) {
-                error = "Falha na ativação. Verifique o código e a conexão."
+            } catch (e: HttpException) {
+                val apiError = e.toTvApiError()
+                error = when (apiError.code) {
+                    "ACTIVATION_CODE_INVALID" -> "Codigo de ativacao invalido. Confira o codigo gerado no portal."
+                    else -> apiError.message ?: "Falha na ativacao. Tente novamente."
+                }
+            } catch (_: Exception) {
+                error = "Falha na ativacao. Verifique o codigo e a conexao."
             } finally {
                 loading = false
             }
@@ -90,7 +107,6 @@ fun PairingScreen(session: Session, onActivated: () -> Unit) {
             .padding(horizontal = 64.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Branding à esquerda
         Column(
             modifier = Modifier.weight(1f).fillMaxHeight(),
             verticalArrangement = Arrangement.Center,
@@ -108,7 +124,7 @@ fun PairingScreen(session: Session, onActivated: () -> Unit) {
                 )
             }
             Text(
-                "IPTV Agão",
+                "IPTV Agao",
                 style = MaterialTheme.typography.displayLarge,
                 color = IptvColors.TextPrimary,
             )
@@ -121,7 +137,6 @@ fun PairingScreen(session: Session, onActivated: () -> Unit) {
             )
         }
 
-        // Card de ativação à direita
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = IptvColors.Surface,
@@ -137,7 +152,7 @@ fun PairingScreen(session: Session, onActivated: () -> Unit) {
                     color = IptvColors.TextPrimary,
                 )
                 Text(
-                    "Acesse o portal no celular ou computador, cadastre esta TV em Dispositivos e digite o código:",
+                    "Acesse o portal no celular ou computador, cadastre esta TV em Dispositivos e digite o codigo:",
                     style = MaterialTheme.typography.bodyMedium,
                     color = IptvColors.TextSecondary,
                     modifier = Modifier.padding(top = 12.dp, bottom = 28.dp),
@@ -147,12 +162,15 @@ fun PairingScreen(session: Session, onActivated: () -> Unit) {
                     code = code,
                     onCodeChange = { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(CODE_LENGTH) },
                     onDpadDown = { focusManager.moveFocus(FocusDirection.Down) },
+                    focusRequester = codeFocusRequester,
                 )
 
                 ActivateButton(
                     enabled = code.length == CODE_LENGTH && !loading,
                     loading = loading,
                     onClick = ::activate,
+                    focusRequester = activateFocusRequester,
+                    upFocusRequester = codeFocusRequester,
                 )
 
                 error?.let {
@@ -173,24 +191,39 @@ private fun CodeInput(
     code: String,
     onCodeChange: (String) -> Unit,
     onDpadDown: () -> Unit,
+    focusRequester: FocusRequester,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+
     BasicTextField(
         value = code,
         onValueChange = onCodeChange,
         singleLine = true,
         textStyle = TextStyle(color = Color.Transparent),
         cursorBrush = SolidColor(Color.Transparent),
-        modifier = Modifier.onPreviewKeyEvent { event ->
-            // D-pad para baixo sai do campo e vai pro botão Ativar
-            if (event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
-                event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
-            ) {
-                onDpadDown()
-                true
-            } else {
-                false
-            }
-        },
+        interactionSource = interaction,
+        modifier = Modifier
+            .focusRequester(focusRequester)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (focused) IptvColors.SurfaceFocused.copy(alpha = 0.5f) else Color.Transparent)
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) IptvColors.Accent else Color.Transparent,
+                shape = RoundedCornerShape(14.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .onPreviewKeyEvent { event ->
+                if (
+                    event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                    event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+                ) {
+                    onDpadDown()
+                    true
+                } else {
+                    false
+                }
+            },
         decorationBox = {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 repeat(CODE_LENGTH) { i ->
@@ -227,7 +260,13 @@ private fun CodeInput(
 }
 
 @Composable
-private fun ActivateButton(enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
+private fun ActivateButton(
+    enabled: Boolean,
+    loading: Boolean,
+    onClick: () -> Unit,
+    focusRequester: FocusRequester,
+    upFocusRequester: FocusRequester,
+) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
 
@@ -241,6 +280,8 @@ private fun ActivateButton(enabled: Boolean, loading: Boolean, onClick: () -> Un
         ),
         modifier = Modifier
             .padding(top = 32.dp)
+            .focusRequester(focusRequester)
+            .focusProperties { up = upFocusRequester }
             .width(240.dp)
             .border(
                 width = if (focused) 2.dp else 0.dp,

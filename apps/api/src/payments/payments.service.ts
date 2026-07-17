@@ -200,7 +200,7 @@ export class PaymentsService {
       const payment = await this.prisma.payment.findUnique({ where: { id: externalId } })
       if (payment && payment.status === PaymentStatus.pending) {
         await this.confirm(payment.id)
-        this.logger.log(`Payment ${payment.id} confirmed via webhook`)
+        this.logger.log('Payment confirmed via webhook')
       }
     }
 
@@ -251,8 +251,8 @@ export class PaymentsService {
         if (checkout.status === 'PAID') {
           await this.confirm(payment.id)
         }
-      } catch (error) {
-        this.logger.warn(`Could not sync payment ${payment.id}: ${(error as Error).message}`)
+      } catch {
+        this.logger.warn('Could not sync pending payment')
       }
     }
   }

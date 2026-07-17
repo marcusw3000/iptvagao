@@ -1,12 +1,19 @@
-import { BadRequestException, Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common'
+import { AppReleaseChannel, UserRole } from '@prisma/client'
+import { BadRequestException, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common'
 import type { FastifyRequest } from 'fastify'
-import { UserRole } from '@prisma/client'
 import { AppReleasesService } from './app-releases.service'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { Roles } from '../common/decorators/roles.decorator'
 import { Public } from '../common/decorators/public.decorator'
 
 const ADMIN_ROLES = [UserRole.master_admin, UserRole.support]
+const APP_RELEASE_CHANNELS = new Set<AppReleaseChannel>(['local', 'staging', 'prod'])
+
+function parseChannel(value: string | undefined, fallback: AppReleaseChannel = 'prod'): AppReleaseChannel {
+  if (!value) return fallback
+  if (APP_RELEASE_CHANNELS.has(value as AppReleaseChannel)) return value as AppReleaseChannel
+  throw new BadRequestException(`Canal invalido: ${value}. Use local, staging ou prod.`)
+}
 
 @Controller('app-releases')
 @UseGuards(JwtAuthGuard)
@@ -30,11 +37,12 @@ export class AppReleasesController {
 
     if (!file) throw new BadRequestException('Nenhum arquivo APK enviado')
     if (!fields.versionCode || !fields.versionName) {
-      throw new BadRequestException('versionCode e versionName são obrigatórios')
+      throw new BadRequestException('versionCode e versionName sao obrigatorios')
     }
 
     return this.appReleasesService.create(
       {
+        channel: parseChannel(fields.channel),
         versionCode: Number.parseInt(fields.versionCode, 10),
         versionName: fields.versionName,
         changelog: fields.changelog,
@@ -46,7 +54,7 @@ export class AppReleasesController {
 
   @Public()
   @Get('latest')
-  latest() {
-    return this.appReleasesService.latest()
+  latest(@Query('channel') channel?: string) {
+    return this.appReleasesService.latest(parseChannel(channel))
   }
 }

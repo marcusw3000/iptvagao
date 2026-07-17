@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Radio } from 'lucide-react'
+import { Radio, Star } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 
@@ -20,6 +20,7 @@ interface Channel {
   logoUrl: string | null
   order: number
   active: boolean
+  isFavorite: boolean
 }
 
 export default function PortalChannelsPage() {
@@ -27,6 +28,7 @@ export default function PortalChannelsPage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [channels, setChannels] = useState<Channel[]>([])
   const [loading, setLoading] = useState(true)
+  const [pendingFavoriteIds, setPendingFavoriteIds] = useState<string[]>([])
 
   async function loadData() {
     if (!clientId) return
@@ -47,6 +49,35 @@ export default function PortalChannelsPage() {
 
   useEffect(() => { loadData() }, [clientId])
 
+  function updateFavorite(channelId: string, isFavorite: boolean) {
+    setChannels((current) =>
+      current.map((channel) => (
+        channel.id === channelId ? { ...channel, isFavorite } : channel
+      )),
+    )
+  }
+
+  async function toggleFavorite(channelId: string, nextValue: boolean) {
+    if (!clientId || pendingFavoriteIds.includes(channelId)) return
+
+    setPendingFavoriteIds((current) => [...current, channelId])
+    updateFavorite(channelId, nextValue)
+
+    try {
+      if (nextValue) {
+        await api.post(`/channels/favorites/${channelId}`)
+      } else {
+        await api.delete(`/channels/favorites/${channelId}`)
+      }
+    } catch {
+      updateFavorite(channelId, !nextValue)
+      toast.error('Erro ao atualizar favorito')
+    } finally {
+      setPendingFavoriteIds((current) => current.filter((id) => id !== channelId))
+    }
+  }
+
+  const favorites = channels.filter((c) => c.isFavorite)
   const uncategorized = channels.filter((c) => !c.categoryId)
   const grouped = categories.map((cat) => ({
     category: cat,
@@ -67,13 +98,30 @@ export default function PortalChannelsPage() {
         <p className="text-gray-400">Carregando...</p>
       ) : (
         <div className="space-y-6">
+          {favorites.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-amber-400 uppercase tracking-wider mb-2">
+                Favoritos
+              </h3>
+              <ChannelList
+                channels={favorites}
+                pendingFavoriteIds={pendingFavoriteIds}
+                onToggleFavorite={toggleFavorite}
+              />
+            </div>
+          )}
+
           {grouped.map(({ category, channels: catChannels }) => (
             catChannels.length > 0 && (
               <div key={category.id}>
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {category.name}
                 </h3>
-                <ChannelList channels={catChannels} />
+                <ChannelList
+                  channels={catChannels}
+                  pendingFavoriteIds={pendingFavoriteIds}
+                  onToggleFavorite={toggleFavorite}
+                />
               </div>
             )
           ))}
@@ -83,7 +131,11 @@ export default function PortalChannelsPage() {
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">
                 Sem categoria
               </h3>
-              <ChannelList channels={uncategorized} />
+              <ChannelList
+                channels={uncategorized}
+                pendingFavoriteIds={pendingFavoriteIds}
+                onToggleFavorite={toggleFavorite}
+              />
             </div>
           )}
 
@@ -96,7 +148,15 @@ export default function PortalChannelsPage() {
   )
 }
 
-function ChannelList({ channels }: { channels: Channel[] }) {
+function ChannelList({
+  channels,
+  pendingFavoriteIds,
+  onToggleFavorite,
+}: {
+  channels: Channel[]
+  pendingFavoriteIds: string[]
+  onToggleFavorite: (channelId: string, nextValue: boolean) => void
+}) {
   if (channels.length === 0) {
     return <p className="text-gray-600 text-sm py-2">Nenhum canal nesta categoria</p>
   }
@@ -119,6 +179,19 @@ function ChannelList({ channels }: { channels: Channel[] }) {
             <p className="text-white text-sm font-medium">{ch.name}</p>
             <p className="text-gray-500 text-xs truncate">{ch.url}</p>
           </div>
+          <button
+            type="button"
+            disabled={pendingFavoriteIds.includes(ch.id)}
+            onClick={() => onToggleFavorite(ch.id, !ch.isFavorite)}
+            className="p-2 rounded-lg transition-colors disabled:opacity-50 hover:bg-gray-800"
+            aria-label={ch.isFavorite ? `Remover ${ch.name} dos favoritos` : `Favoritar ${ch.name}`}
+            title={ch.isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+          >
+            <Star
+              size={18}
+              className={ch.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-gray-500'}
+            />
+          </button>
         </div>
       ))}
     </div>

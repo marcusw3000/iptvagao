@@ -4,7 +4,7 @@ import { SubscriptionsService } from './subscriptions.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { SubscriptionStatus } from '@prisma/client'
 
-const mockPlan = { id: 'plan-1', name: 'Básico', type: 'basic', price: '99.90' }
+const mockPlan = { id: 'plan-1', name: 'Básico', type: 'basic', price: '19.00' }
 const mockClient = { id: 'client-1', name: 'Empresa', email: 'e@test.com' }
 const mockSubscription = {
   id: 'sub-1',

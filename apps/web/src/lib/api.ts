@@ -3,22 +3,18 @@ import axios from 'axios'
 export const api = axios.create({
   baseURL: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/v1`,
   headers: { 'Content-Type': 'application/json' },
-})
-
-api.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('access_token')
-    if (token) config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
+  withCredentials: true,
 })
 
 api.interceptors.response.use(
   (r) => r,
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('access_token')
-      window.location.href = '/login'
+      window.dispatchEvent(new Event('auth:unauthorized'))
+      const pathname = window.location.pathname
+      if (pathname !== '/login' && pathname !== '/signup' && pathname !== '/signup/complete') {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   },

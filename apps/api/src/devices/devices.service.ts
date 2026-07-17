@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateDeviceDto } from './dto/create-device.dto'
+import { tvErrors } from '../tv/tv.errors'
 
 const ONLINE_THRESHOLD_MS = 5 * 60 * 1000
 
@@ -12,9 +13,16 @@ const DEVICE_SELECT = {
   activated: true,
   lastSeenAt: true,
   ipAddress: true,
+  userAgent: true,
   createdAt: true,
   updatedAt: true,
 } as const
+
+type DeviceRecord = {
+  activated: boolean
+  lastSeenAt: Date | null
+  userAgent?: string | null
+}
 
 export function generateCode(length: number): string {
   const { randomBytes } = require('crypto') as typeof import('crypto')
@@ -22,51 +30,107 @@ export function generateCode(length: number): string {
   return Array.from({ length }, () => chars[randomBytes(1)[0] % chars.length]).join('')
 }
 
+function isOnline(device: DeviceRecord, now = Date.now()) {
+  if (!device.activated || !device.lastSeenAt) return false
+  return now - device.lastSeenAt.getTime() < ONLINE_THRESHOLD_MS
+}
+
+function operationalStatus(device: DeviceRecord, now = Date.now()) {
+  if (!device.activated) return 'pending'
+  return isOnline(device, now) ? 'online' : 'offline'
+}
+
+function parseDeviceSignature(userAgent?: string | null) {
+  if (!userAgent) {
+    return {
+      appVersion: null,
+      deviceModel: null,
+      appEnvironment: null,
+    }
+  }
+
+  const versionMatch = userAgent.match(/^iptvagao-tv\/([^\s]+)\s+\((.*?)\)\s+env\/(.+)$/i)
+  if (!versionMatch) {
+    return {
+      appVersion: null,
+      deviceModel: userAgent,
+      appEnvironment: null,
+    }
+  }
+
+  return {
+    appVersion: versionMatch[1] || null,
+    deviceModel: versionMatch[2] || null,
+    appEnvironment: versionMatch[3] || null,
+  }
+}
+
 @Injectable()
 export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private enrichDevice<T extends DeviceRecord>(device: T, now = Date.now()) {
+    const signature = parseDeviceSignature(device.userAgent)
+    return {
+      ...device,
+      online: isOnline(device, now),
+      operationalStatus: operationalStatus(device, now),
+      appVersion: signature.appVersion,
+      deviceModel: signature.deviceModel,
+      appEnvironment: signature.appEnvironment,
+    }
+  }
+
   async create(dto: CreateDeviceDto) {
     const activationCode = generateCode(6)
-    return this.prisma.device.create({
+    const device = await this.prisma.device.create({
       data: { ...dto, activationCode, activated: true },
       select: DEVICE_SELECT,
     })
+    return this.enrichDevice(device)
   }
 
   async selfRegister(clientId: string, name?: string) {
     const activationCode = generateCode(6)
-    return this.prisma.device.create({
+    const device = await this.prisma.device.create({
       data: { clientId, name: name ?? 'TV', activationCode, activated: true },
       select: DEVICE_SELECT,
     })
+    return this.enrichDevice(device)
   }
 
   async findByClient(clientId: string, { page = 1, limit = 20 }: { page: number; limit: number }) {
     const skip = (page - 1) * limit
-    const [data, total] = await Promise.all([
+    const [devices, total] = await Promise.all([
       this.prisma.device.findMany({
         where: { clientId },
         skip,
         take: limit,
         select: DEVICE_SELECT,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ lastSeenAt: 'desc' }, { createdAt: 'desc' }],
       }),
       this.prisma.device.count({ where: { clientId } }),
     ])
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) }
+    const now = Date.now()
+    return {
+      data: devices.map((device) => this.enrichDevice(device, now)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    }
   }
 
   async findOne(id: string) {
     const device = await this.prisma.device.findUnique({ where: { id }, select: DEVICE_SELECT })
-    if (!device) throw new NotFoundException('Dispositivo não encontrado')
-    return device
+    if (!device) throw new NotFoundException('Dispositivo nao encontrado')
+    return this.enrichDevice(device)
   }
 
-  async heartbeat(deviceId: string, ipAddress?: string) {
+  async heartbeat(deviceId: string, ipAddress?: string, userAgent?: string) {
     const device = await this.prisma.device.findUnique({ where: { id: deviceId } })
-    if (!device) throw new NotFoundException('Dispositivo não encontrado')
-    if (!device.activated) throw new ForbiddenException('Dispositivo não ativado')
+    if (!device) throw new NotFoundException('Dispositivo nao encontrado')
+    if (!device.activated) throw new ForbiddenException('Dispositivo nao ativado')
 
     const subscription = await this.prisma.subscription.findUnique({
       where: { clientId: device.clientId },
@@ -82,7 +146,7 @@ export class DevicesService {
 
     if (subscription) {
       if (subscription.status === 'suspended' || subscription.status === 'cancelled') {
-        throw new ForbiddenException('Assinatura suspensa ou cancelada')
+        throw tvErrors.subscriptionInactive()
       }
 
       const limit = Math.max(subscription.plan.maxDevices ?? 1, 1)
@@ -96,19 +160,23 @@ export class DevicesService {
         },
       })
       if (onlineCount >= limit) {
-        throw new ForbiddenException(`Limite de ${limit} TV(s) simultânea(s) atingido`)
+        throw tvErrors.tvLimitReached(limit)
       }
     }
 
-    return this.prisma.device.update({
+    const updated = await this.prisma.device.update({
       where: { id: deviceId },
-      data: { lastSeenAt: new Date(), ipAddress: ipAddress ?? null },
+      data: {
+        lastSeenAt: new Date(),
+        ipAddress: ipAddress ?? null,
+        ...(userAgent ? { userAgent } : {}),
+      },
       select: DEVICE_SELECT,
     })
+    return this.enrichDevice(updated)
   }
 
   async findAllForMonitoring({ page = 1, limit = 50 }: { page: number; limit: number }) {
-    const onlineThreshold = new Date(Date.now() - ONLINE_THRESHOLD_MS)
     const skip = (page - 1) * limit
     const [devices, total] = await Promise.all([
       this.prisma.device.findMany({
@@ -122,6 +190,7 @@ export class DevicesService {
           activated: true,
           lastSeenAt: true,
           ipAddress: true,
+          userAgent: true,
           createdAt: true,
           updatedAt: true,
           client: { select: { id: true, name: true } },
@@ -131,10 +200,8 @@ export class DevicesService {
       this.prisma.device.count(),
     ])
 
-    const data = devices.map((d) => ({
-      ...d,
-      online: d.activated && !!d.lastSeenAt && d.lastSeenAt >= onlineThreshold,
-    }))
+    const now = Date.now()
+    const data = devices.map((device) => this.enrichDevice(device, now))
 
     return {
       data,
@@ -142,7 +209,7 @@ export class DevicesService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
-      onlineCount: data.filter((d) => d.online).length,
+      onlineCount: data.filter((device) => device.online).length,
     }
   }
 

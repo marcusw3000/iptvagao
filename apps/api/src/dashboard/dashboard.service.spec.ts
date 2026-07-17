@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service'
 const mockRecentPayments = [
   {
     id: 'pay-1',
-    amount: '99.90',
+    amount: '29.00',
     method: 'pix',
     paidAt: new Date(),
     subscription: { client: { name: 'Acme' } },

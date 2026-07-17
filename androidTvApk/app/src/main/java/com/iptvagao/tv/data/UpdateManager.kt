@@ -18,12 +18,11 @@ object UpdateManager {
         .readTimeout(5, TimeUnit.MINUTES)
         .build()
 
-    // Retorna a versão publicada se for mais nova que a instalada, senão null
     suspend fun checkForUpdate(): AppReleaseDto? {
         return try {
-            val release = Api.service.latestRelease()
+            val release = Api.service.latestRelease(BuildConfig.UPDATE_CHANNEL)
             if (release.versionCode > BuildConfig.VERSION_CODE) release else null
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

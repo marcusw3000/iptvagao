@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt'
 import { TvService } from './tv.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { ChannelsService } from '../channels/channels.service'
+import { FavoritesService } from '../channels/favorites.service'
 import { DevicesService } from '../devices/devices.service'
 import { EpgService } from '../epg/epg.service'
 
@@ -25,19 +26,27 @@ describe('TvService', () => {
   }
   const jwt = { signAsync: jest.fn().mockResolvedValue('device-token') }
   const channels = { findForClient: jest.fn() }
+  const favorites = {
+    annotateChannels: jest.fn(),
+    addFavorite: jest.fn(),
+    removeFavorite: jest.fn(),
+  }
   const devices = { heartbeat: jest.fn() }
   const epg = { nowNextForChannels: jest.fn().mockResolvedValue({}) }
 
   beforeEach(async () => {
     jest.clearAllMocks()
     epg.nowNextForChannels.mockResolvedValue({})
-    prisma.favorite.findMany.mockResolvedValue([])
+    favorites.annotateChannels.mockImplementation(async (_clientId: string, currentChannels: any[]) =>
+      currentChannels.map((channel) => ({ ...channel, isFavorite: false })),
+    )
     const module = await Test.createTestingModule({
       providers: [
         TvService,
         { provide: PrismaService, useValue: prisma },
         { provide: JwtService, useValue: jwt },
         { provide: ChannelsService, useValue: channels },
+        { provide: FavoritesService, useValue: favorites },
         { provide: DevicesService, useValue: devices },
         { provide: EpgService, useValue: epg },
       ],
@@ -48,7 +57,13 @@ describe('TvService', () => {
   describe('activate', () => {
     it('throws when activation code is unknown', async () => {
       prisma.device.findUnique.mockResolvedValue(null)
-      await expect(service.activate('ABC123')).rejects.toThrow(NotFoundException)
+      await expect(service.activate('ABC123')).rejects.toMatchObject({
+        response: {
+          code: 'ACTIVATION_CODE_INVALID',
+          message: 'Codigo de ativacao invalido',
+        },
+        status: 404,
+      })
     })
 
     it('normalizes code, activates device and returns token', async () => {
@@ -79,22 +94,19 @@ describe('TvService', () => {
 
   it('delegates channel listing to ChannelsService and returns empty list untouched', async () => {
     channels.findForClient.mockResolvedValue([])
-    const result = await service.channelsForClient('cli1', 'dev1')
+    const result = await service.channelsForClient('cli1')
     expect(channels.findForClient).toHaveBeenCalledWith('cli1')
     expect(result).toEqual([])
   })
 
   it('enriches channels with favorite flag and EPG now/next', async () => {
     channels.findForClient.mockResolvedValue([{ id: 'ch1', name: 'Canal 1' }])
-    prisma.favorite.findMany.mockResolvedValue([{ channelId: 'ch1' }])
+    favorites.annotateChannels.mockResolvedValue([{ id: 'ch1', name: 'Canal 1', isFavorite: true }])
     epg.nowNextForChannels.mockResolvedValue({ ch1: { now: { title: 'Jornal' }, next: null } })
 
-    const result = await service.channelsForClient('cli1', 'dev1')
+    const result = await service.channelsForClient('cli1')
 
-    expect(prisma.favorite.findMany).toHaveBeenCalledWith({
-      where: { deviceId: 'dev1', channelId: { in: ['ch1'] } },
-      select: { channelId: true },
-    })
+    expect(favorites.annotateChannels).toHaveBeenCalledWith('cli1', [{ id: 'ch1', name: 'Canal 1' }])
     expect(result).toEqual([
       { id: 'ch1', name: 'Canal 1', isFavorite: true, epgNow: { title: 'Jornal' }, epgNext: null },
     ])
@@ -102,26 +114,22 @@ describe('TvService', () => {
 
   it('delegates heartbeat to DevicesService', () => {
     devices.heartbeat.mockResolvedValue({})
-    service.heartbeat('dev1', '1.2.3.4')
-    expect(devices.heartbeat).toHaveBeenCalledWith('dev1', '1.2.3.4')
+    service.heartbeat('dev1', '1.2.3.4', 'iptvagao-tv/1.0.0')
+    expect(devices.heartbeat).toHaveBeenCalledWith('dev1', '1.2.3.4', 'iptvagao-tv/1.0.0')
   })
 
   describe('favorites', () => {
-    it('upserts a favorite for the device', async () => {
-      prisma.favorite.upsert.mockResolvedValue({})
-      const result = await service.addFavorite('dev1', 'ch1')
-      expect(prisma.favorite.upsert).toHaveBeenCalledWith({
-        where: { deviceId_channelId: { deviceId: 'dev1', channelId: 'ch1' } },
-        create: { deviceId: 'dev1', channelId: 'ch1' },
-        update: {},
-      })
+    it('adds a favorite for the client', async () => {
+      favorites.addFavorite.mockResolvedValue({ channelId: 'ch1', isFavorite: true })
+      const result = await service.addFavorite('cli1', 'ch1')
+      expect(favorites.addFavorite).toHaveBeenCalledWith('cli1', 'ch1')
       expect(result).toEqual({ channelId: 'ch1', isFavorite: true })
     })
 
-    it('removes a favorite for the device', async () => {
-      prisma.favorite.deleteMany.mockResolvedValue({})
-      const result = await service.removeFavorite('dev1', 'ch1')
-      expect(prisma.favorite.deleteMany).toHaveBeenCalledWith({ where: { deviceId: 'dev1', channelId: 'ch1' } })
+    it('removes a favorite for the client', async () => {
+      favorites.removeFavorite.mockResolvedValue({ channelId: 'ch1', isFavorite: false })
+      const result = await service.removeFavorite('cli1', 'ch1')
+      expect(favorites.removeFavorite).toHaveBeenCalledWith('cli1', 'ch1')
       expect(result).toEqual({ channelId: 'ch1', isFavorite: false })
     })
   })

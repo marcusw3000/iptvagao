@@ -3,8 +3,17 @@ export interface LoginDto {
   password: string
 }
 
-export interface AuthTokens {
-  accessToken: string
+export interface AuthSessionUser {
+  id: string
+  username: string
+  email: string | null
+  role: string
+  clientId: string | null
+  resellerId: string | null
+}
+
+export interface AuthSession {
+  user: AuthSessionUser
   expiresIn: number
 }
 

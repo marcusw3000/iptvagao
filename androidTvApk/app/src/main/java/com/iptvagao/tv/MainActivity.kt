@@ -23,12 +23,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.iptvagao.tv.data.Api
 import com.iptvagao.tv.data.ChannelDto
 import com.iptvagao.tv.data.Session
+import com.iptvagao.tv.data.TvApiError
+import com.iptvagao.tv.data.toTvApiError
 import com.iptvagao.tv.ui.AccountScreen
 import com.iptvagao.tv.ui.ChannelsScreen
 import com.iptvagao.tv.ui.HomeScreen
@@ -56,35 +60,34 @@ private data class AppAlertState(
     val title: String,
     val message: String,
     val actionLabel: String,
+    val onAction: (() -> Unit)? = null,
 )
 
-private fun extractApiErrorMessage(error: HttpException): String? {
-    val raw = try {
-        error.response()?.errorBody()?.string()
-    } catch (_: Exception) {
-        null
-    } ?: return null
-
-    val match = Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(raw)
-    return match?.groupValues?.getOrNull(1) ?: raw
-}
-
-private fun alertFromForbidden(message: String): AppAlertState {
-    val normalized = message.lowercase()
-    return when {
-        "suspensa" in normalized || "cancelada" in normalized -> AppAlertState(
-            title = "Assinatura indisponível",
-            message = "Sua assinatura está suspensa ou cancelada. Regularize o acesso no portal para continuar.",
+private fun alertFromApiError(error: TvApiError): AppAlertState {
+    return when (error.code) {
+        "SUBSCRIPTION_INACTIVE" -> AppAlertState(
+            title = "Assinatura indisponivel",
+            message = "Sua assinatura esta suspensa ou cancelada. Regularize o acesso no portal para continuar.",
             actionLabel = "Entendi",
         )
-        "limite" in normalized -> AppAlertState(
+        "TV_LIMIT_REACHED" -> AppAlertState(
             title = "Limite de TVs atingido",
-            message = "Já existe outro dispositivo usando o plano neste momento. Feche a outra TV ou aumente o limite do plano.",
+            message = "Ja existe outro dispositivo usando o plano neste momento. Feche a outra TV ou aumente o limite do plano.",
             actionLabel = "Tentar novamente",
+        )
+        "DEVICE_REVOKED" -> AppAlertState(
+            title = "Dispositivo desativado",
+            message = "Esta TV foi revogada no portal ou perdeu a ativacao. Faca a ativacao novamente para continuar.",
+            actionLabel = "Ir para ativacao",
+        )
+        "DEVICE_TOKEN_INVALID", "DEVICE_TOKEN_MISSING" -> AppAlertState(
+            title = "Sessao expirada",
+            message = "A sessao deste dispositivo nao e mais valida. Faca a ativacao novamente para continuar.",
+            actionLabel = "Ir para ativacao",
         )
         else -> AppAlertState(
             title = "Acesso bloqueado",
-            message = message,
+            message = error.message ?: "O backend bloqueou o acesso deste dispositivo.",
             actionLabel = "Tentar novamente",
         )
     }
@@ -115,7 +118,6 @@ private fun App(session: Session) {
 
     LaunchedEffect(screen is Screen.Pairing) {
         if (screen is Screen.Pairing) {
-            alertState = null
             networkFailures = 0
             return@LaunchedEffect
         }
@@ -126,15 +128,18 @@ private fun App(session: Session) {
                 alertState = null
                 networkFailures = 0
             } catch (e: HttpException) {
+                val apiError = e.toTvApiError()
                 when (e.code()) {
                     401 -> {
-                        session.clear()
-                        alertState = null
-                        screen = Screen.Pairing
+                        alertState = alertFromApiError(apiError).copy(
+                            onAction = {
+                                session.clear()
+                                screen = Screen.Pairing
+                            },
+                        )
                     }
                     403 -> {
-                        val apiMessage = extractApiErrorMessage(e) ?: "O dispositivo foi bloqueado pelo backend."
-                        alertState = alertFromForbidden(apiMessage)
+                        alertState = alertFromApiError(apiError)
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -143,8 +148,8 @@ private fun App(session: Session) {
                 networkFailures += 1
                 if (networkFailures >= OFFLINE_FAILURE_THRESHOLD) {
                     alertState = AppAlertState(
-                        title = "Sem conexão com a API",
-                        message = "O app não consegue falar com o backend ${BuildConfig.API_ENVIRONMENT}. Verifique a rede ou a URL configurada em ${BuildConfig.API_BASE_URL}.",
+                        title = "Sem conexao com a API",
+                        message = "O app nao consegue falar com o backend ${BuildConfig.API_ENVIRONMENT}. Verifique a rede ou a URL configurada em ${BuildConfig.API_BASE_URL}.",
                         actionLabel = "Continuar tentando",
                     )
                 }
@@ -171,7 +176,14 @@ private fun App(session: Session) {
             BackHandler { screen = Screen.Home }
             ChannelsScreen(
                 session = session,
-                onSessionExpired = { screen = Screen.Pairing },
+                onSessionExpired = { apiError ->
+                    val nextAlert = apiError?.let(::alertFromApiError)
+                    if (nextAlert != null) {
+                        alertState = nextAlert.copy(onAction = { screen = Screen.Pairing })
+                    } else {
+                        screen = Screen.Pairing
+                    }
+                },
                 startWithFavoritesOnly = current.favoritesOnly,
                 onPlay = { channels, index ->
                     screen = Screen.Player(
@@ -208,7 +220,11 @@ private fun App(session: Session) {
             title = state.title,
             message = state.message,
             actionLabel = state.actionLabel,
-            onAction = { alertState = null },
+            onAction = {
+                val action = state.onAction
+                alertState = null
+                action?.invoke()
+            },
         )
     }
 }
@@ -220,6 +236,12 @@ private fun AppAlertOverlay(
     actionLabel: String,
     onAction: () -> Unit,
 ) {
+    val actionFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        actionFocusRequester.requestFocus()
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -250,7 +272,9 @@ private fun AppAlertOverlay(
                 )
                 Button(
                     onClick = onAction,
-                    modifier = Modifier.padding(top = 24.dp),
+                    modifier = Modifier
+                        .padding(top = 24.dp)
+                        .focusRequester(actionFocusRequester),
                 ) {
                     Text(actionLabel)
                 }

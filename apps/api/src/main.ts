@@ -5,9 +5,10 @@ import fastifyMultipart from '@fastify/multipart'
 import { AppModule } from './app.module'
 
 async function bootstrap() {
+  const isProduction = process.env.NODE_ENV === 'production'
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: true }),
+    new FastifyAdapter({ logger: !isProduction }),
   )
 
   // Capture raw body for webhook HMAC verification (skip multipart — let @fastify/multipart read the stream itself)
@@ -49,6 +50,19 @@ async function bootstrap() {
   app.enableCors({
     origin: (process.env.WEB_URL || 'http://localhost:3000').split(','),
     credentials: true,
+  })
+
+  fastify.addHook('onSend', async (_req: any, reply: any, payload: any) => {
+    reply.header('X-Content-Type-Options', 'nosniff')
+    reply.header('X-Frame-Options', 'DENY')
+    reply.header('Referrer-Policy', 'no-referrer')
+    reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    reply.header('Cross-Origin-Opener-Policy', 'same-origin')
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+    if (isProduction) {
+      reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    }
+    return payload
   })
 
   const port = process.env.PORT || 3001

@@ -16,7 +16,8 @@ export class SupabaseService {
   }
 
   async uploadChannelLogo(buffer: Buffer, filename: string, mimeType: string): Promise<string> {
-    const path = `${Date.now()}-${filename}`
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-')
+    const path = `${Date.now()}-${safeFilename}`
     const { error } = await this.client.storage.from(this.bucket).upload(path, buffer, {
       contentType: mimeType,
       upsert: false,

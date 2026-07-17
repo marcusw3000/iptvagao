@@ -32,12 +32,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.iptvagao.tv.data.Api
 import com.iptvagao.tv.data.AccountResponse
+import com.iptvagao.tv.data.Api
 import com.iptvagao.tv.data.Session
+import com.iptvagao.tv.data.toTvApiError
+import retrofit2.HttpException
 
 private fun statusLabel(status: String?): String = when (status) {
     "active" -> "Ativa"
@@ -50,9 +54,8 @@ private fun statusLabel(status: String?): String = when (status) {
 private fun formatDate(iso: String?): String {
     if (iso == null) return "Sem data definida"
     return try {
-        // API retorna ISO 8601 (ex: 2026-12-31T00:00:00.000Z) — mostra só a parte da data
         iso.substring(0, 10).split("-").reversed().joinToString("/")
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         iso
     }
 }
@@ -65,15 +68,20 @@ fun AccountScreen(session: Session, onBack: () -> Unit, onLogout: () -> Unit) {
     LaunchedEffect(Unit) {
         try {
             account = Api.service.account(session.bearer ?: "")
-        } catch (e: retrofit2.HttpException) {
+        } catch (e: HttpException) {
             if (e.code() == 401) {
                 session.clear()
                 onLogout()
             } else {
-                error = "Erro ao carregar dados da conta (${e.code()})."
+                val apiError = e.toTvApiError()
+                error = when (apiError.code) {
+                    "SUBSCRIPTION_INACTIVE" -> "Assinatura suspensa ou cancelada."
+                    "TV_LIMIT_REACHED" -> apiError.message ?: "Limite de TVs atingido."
+                    else -> apiError.message ?: "Erro ao carregar dados da conta (${e.code()})."
+                }
             }
-        } catch (e: Exception) {
-            error = "Sem conexão com o servidor."
+        } catch (_: Exception) {
+            error = "Sem conexao com o servidor."
         }
     }
 
@@ -82,7 +90,6 @@ fun AccountScreen(session: Session, onBack: () -> Unit, onLogout: () -> Unit) {
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(IptvColors.Background, IptvColors.BackgroundAlt)))
             .padding(28.dp)
-            // Segurança: em telas menores/mais densas o conteúdo pode não caber na altura visível
             .verticalScroll(rememberScrollState()),
     ) {
         Text("Conta", style = MaterialTheme.typography.headlineMedium, color = IptvColors.TextPrimary)
@@ -97,7 +104,7 @@ fun AccountScreen(session: Session, onBack: () -> Unit, onLogout: () -> Unit) {
             account == null -> Box(Modifier.padding(top = 20.dp)) {
                 CircularProgressIndicator(color = IptvColors.Accent)
             }
-            else -> AccountDetails(account!!, session.deviceName, onLogout = {
+            else -> AccountDetails(account!!, session.deviceName, onBack = onBack, onLogout = {
                 session.clear()
                 onLogout()
             })
@@ -106,24 +113,55 @@ fun AccountScreen(session: Session, onBack: () -> Unit, onLogout: () -> Unit) {
 }
 
 @Composable
-private fun AccountDetails(account: AccountResponse, deviceName: String?, onLogout: () -> Unit) {
+private fun AccountDetails(
+    account: AccountResponse,
+    deviceName: String?,
+    onBack: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    val backFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        backFocusRequester.requestFocus()
+    }
+
     Column(modifier = Modifier.padding(top = 36.dp).width(520.dp)) {
         Surface(shape = RoundedCornerShape(16.dp), color = IptvColors.Surface) {
             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 SectionLabel("Dispositivo")
                 InfoRow("Cliente", account.clientName)
-                InfoRow("Dispositivo", deviceName ?: "—", isLast = true)
+                InfoRow("Dispositivo", deviceName ?: "-", isLast = true)
 
                 HorizontalDivider(color = IptvColors.Background, thickness = 1.dp)
 
                 SectionLabel("Assinatura")
                 InfoRow("Plano", account.planName ?: "Sem plano")
                 InfoRow("Status", statusLabel(account.subscriptionStatus))
-                InfoRow("Válido até", formatDate(account.subscriptionEndDate), isLast = true)
+                InfoRow("Valido ate", formatDate(account.subscriptionEndDate), isLast = true)
             }
         }
 
-        LogoutButton(onClick = onLogout)
+        Row(
+            modifier = Modifier.padding(top = 16.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SecondaryActionButton(
+                label = "Voltar",
+                focusedBorder = IptvColors.Accent,
+                textColor = IptvColors.TextPrimary,
+                onClick = onBack,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(backFocusRequester),
+            )
+            SecondaryActionButton(
+                label = "Desativar dispositivo",
+                focusedBorder = Color(0xFFF87171),
+                textColor = Color(0xFFF87171),
+                onClick = onLogout,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -151,7 +189,13 @@ private fun InfoRow(label: String, value: String, isLast: Boolean = false) {
 }
 
 @Composable
-private fun LogoutButton(onClick: () -> Unit) {
+private fun SecondaryActionButton(
+    label: String,
+    focusedBorder: Color,
+    textColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
 
@@ -160,17 +204,14 @@ private fun LogoutButton(onClick: () -> Unit) {
         interactionSource = interaction,
         colors = ButtonDefaults.buttonColors(
             containerColor = IptvColors.Surface,
-            contentColor = Color(0xFFF87171),
+            contentColor = textColor,
         ),
-        modifier = Modifier
-            .padding(top = 16.dp)
-            .fillMaxWidth()
-            .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) Color(0xFFF87171) else Color.Transparent,
-                shape = RoundedCornerShape(24.dp),
-            ),
+        modifier = modifier.border(
+            width = if (focused) 2.dp else 0.dp,
+            color = if (focused) focusedBorder else Color.Transparent,
+            shape = RoundedCornerShape(24.dp),
+        ),
     ) {
-        Text("Desativar dispositivo", modifier = Modifier.padding(vertical = 4.dp))
+        Text(label, modifier = Modifier.padding(vertical = 4.dp))
     }
 }

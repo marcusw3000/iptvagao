@@ -6,11 +6,12 @@ import { PrismaService } from '../prisma/prisma.service'
 const mockDevice = {
   id: 'device-1',
   clientId: 'client-1',
-  name: 'TV Recepção',
+  name: 'TV Recepcao',
   activationCode: 'ABC123',
   activated: false,
   lastSeenAt: null,
   ipAddress: null,
+  userAgent: 'iptvagao-tv/1.2.3 (Chromecast HD) env/local',
   createdAt: new Date(),
   updatedAt: new Date(),
 }
@@ -31,7 +32,7 @@ describe('DevicesService', () => {
         create: jest.fn().mockResolvedValue(mockDevice),
         findMany: jest.fn().mockResolvedValue([mockDevice]),
         findUnique: jest.fn().mockResolvedValue(mockDevice),
-        update: jest.fn().mockResolvedValue(mockActivatedDevice),
+        update: jest.fn().mockResolvedValue({ ...mockActivatedDevice, lastSeenAt: new Date() }),
         count: jest.fn().mockResolvedValue(1),
         delete: jest.fn().mockResolvedValue(mockDevice),
       },
@@ -50,6 +51,7 @@ describe('DevicesService', () => {
   it('create returns device with auto-generated activationCode', async () => {
     const result = await service.create({ clientId: 'client-1', name: 'TV Sala' })
     expect(result.id).toBe('device-1')
+    expect(result).toHaveProperty('operationalStatus', 'pending')
     expect(prisma.device.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ clientId: 'client-1', name: 'TV Sala', activationCode: expect.any(String) }),
@@ -57,10 +59,15 @@ describe('DevicesService', () => {
     )
   })
 
-  it('findByClient returns paginated devices for clientId', async () => {
+  it('findByClient returns paginated devices with computed status', async () => {
     const result = await service.findByClient('client-1', { page: 1, limit: 20 })
     expect(result).toHaveProperty('data')
     expect(result.data[0].clientId).toBe('client-1')
+    expect(result.data[0]).toHaveProperty('online', false)
+    expect(result.data[0]).toHaveProperty('operationalStatus', 'pending')
+    expect(result.data[0]).toHaveProperty('appVersion', '1.2.3')
+    expect(result.data[0]).toHaveProperty('deviceModel', 'Chromecast HD')
+    expect(result.data[0]).toHaveProperty('appEnvironment', 'local')
     expect(result.total).toBe(1)
     expect(result.totalPages).toBe(1)
   })
@@ -93,17 +100,30 @@ describe('DevicesService', () => {
   it('heartbeat throws ForbiddenException when concurrent limit reached', async () => {
     prisma.device.findUnique.mockResolvedValue(mockActivatedDevice)
     prisma.device.count.mockResolvedValue(1)
-    await expect(service.heartbeat('device-1')).rejects.toThrow(ForbiddenException)
+    await expect(service.heartbeat('device-1')).rejects.toMatchObject({
+      response: {
+        code: 'TV_LIMIT_REACHED',
+        message: 'Limite de 1 TV(s) simultanea(s) atingido',
+      },
+      status: 403,
+    })
   })
 
-  it('heartbeat updates lastSeenAt when within limit', async () => {
+  it('heartbeat updates lastSeenAt and userAgent when within limit', async () => {
     prisma.device.findUnique.mockResolvedValue(mockActivatedDevice)
     prisma.device.count.mockResolvedValue(0)
-    const result = await service.heartbeat('device-1', '192.168.1.1')
+    const result = await service.heartbeat('device-1', '192.168.1.1', 'iptvagao-tv/1.2.3 (Android TV)')
     expect(prisma.device.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ lastSeenAt: expect.any(Date) }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lastSeenAt: expect.any(Date),
+          userAgent: 'iptvagao-tv/1.2.3 (Android TV)',
+        }),
+      }),
     )
     expect(result.activated).toBe(true)
+    expect(result).toHaveProperty('online', true)
+    expect(result).toHaveProperty('operationalStatus', 'online')
   })
 
   it('heartbeat allows up to plan.maxDevices concurrent TVs', async () => {
@@ -117,7 +137,13 @@ describe('DevicesService', () => {
     prisma.device.findUnique.mockResolvedValue(mockActivatedDevice)
     prisma.subscription.findUnique.mockResolvedValue({ status: 'suspended', plan: { maxDevices: 4 } })
 
-    await expect(service.heartbeat('device-1')).rejects.toThrow(ForbiddenException)
+    await expect(service.heartbeat('device-1')).rejects.toMatchObject({
+      response: {
+        code: 'SUBSCRIPTION_INACTIVE',
+        message: 'Assinatura suspensa ou cancelada',
+      },
+      status: 403,
+    })
     expect(prisma.device.update).not.toHaveBeenCalled()
   })
 
@@ -128,7 +154,8 @@ describe('DevicesService', () => {
     const result = await service.findAllForMonitoring({ page: 1, limit: 50 })
     expect(result).toHaveProperty('data')
     expect(result).toHaveProperty('onlineCount')
-    expect(result.data[0]).toHaveProperty('online')
+    expect(result.data[0]).toHaveProperty('online', true)
+    expect(result.data[0]).toHaveProperty('operationalStatus', 'online')
   })
 
   it('remove deletes device and returns nothing', async () => {

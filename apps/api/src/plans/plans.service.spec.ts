@@ -7,7 +7,7 @@ const mockPlan = {
   id: 'plan-1',
   name: 'Básico',
   type: 'basic',
-  price: '99.90',
+  price: '19.00',
   maxDevices: 5,
   storageGB: 10,
   maxChannels: 20,
@@ -81,7 +81,7 @@ describe('PlansService', () => {
     const result = await service.create({
       name: 'Básico',
       type: 'basic',
-      price: 99.9,
+      price: 19,
       maxDevices: 5,
       maxChannels: 20,
     })
@@ -90,11 +90,11 @@ describe('PlansService', () => {
   })
 
   it('update calls prisma update with provided fields', async () => {
-    await service.update('plan-1', { name: 'Premium', price: 199.9 })
+    await service.update('plan-1', { name: 'Premium', price: 29 })
     expect(prisma.plan.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'plan-1' },
-        data: expect.objectContaining({ name: 'Premium', price: 199.9 }),
+        data: expect.objectContaining({ name: 'Premium', price: 29 }),
       }),
     )
   })

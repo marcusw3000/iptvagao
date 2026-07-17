@@ -43,13 +43,13 @@ describe('PublicSignupService', () => {
     }
     plansService = {
       findPublicPlans: jest.fn().mockResolvedValue([
-        { id: 'plan-1', name: 'Premium', type: 'premium', price: '99.90' },
+        { id: 'plan-1', name: 'Premium', type: 'premium', price: '29.00' },
       ]),
       findActivePlan: jest.fn().mockResolvedValue({
         id: 'plan-1',
         name: 'Premium',
         type: 'premium',
-        price: '99.90',
+        price: '29.00',
       }),
     }
     resellersService = {
@@ -86,7 +86,7 @@ describe('PublicSignupService', () => {
 
   it('lists public plans', async () => {
     await expect(service.listPlans()).resolves.toEqual([
-      { id: 'plan-1', name: 'Premium', type: 'premium', price: '99.90' },
+      { id: 'plan-1', name: 'Premium', type: 'premium', price: '29.00' },
     ])
   })
 

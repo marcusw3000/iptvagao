@@ -41,7 +41,7 @@ export class TorrentEngineService {
     this.downloadDir = this.configService.get<string>('TORRENT_DOWNLOAD_DIR') ?? path.join(process.cwd(), 'storage', 'torrents')
   }
 
-  async prepareStream(source: string, reqBaseUrl?: string): Promise<TorrentStreamPreparationResult> {
+  async prepareStream(source: string): Promise<TorrentStreamPreparationResult> {
     if (!source || (!source.startsWith('magnet:') && !source.endsWith('.torrent'))) {
       throw new BadRequestException('Fonte inválida para torrent')
     }
@@ -57,16 +57,21 @@ export class TorrentEngineService {
       throw new BadRequestException('Nenhum arquivo de vídeo encontrado no torrent')
     }
 
-    const filePath = path.join(this.downloadDir, chosenFile.path)
+    const filePath = path.resolve(this.downloadDir, chosenFile.path)
+    const normalizedDownloadDir = path.resolve(this.downloadDir)
+    const expectedPrefix = `${normalizedDownloadDir}${path.sep}`
+    if (filePath !== normalizedDownloadDir && !filePath.startsWith(expectedPrefix)) {
+      throw new BadRequestException('Caminho de torrent invalido')
+    }
     const fileName = path.basename(chosenFile.path)
     const mimeType = this.detectMimeType(fileName)
     const id = this.buildDownloadId(source, filePath)
 
     this.activeDownloads.set(id, { filePath, fileName, mimeType })
 
-    const baseUrl = reqBaseUrl
-      ? reqBaseUrl.replace('localhost', '10.0.2.2').replace('127.0.0.1', '10.0.2.2')
-      : (this.configService.get<string>('API_URL') ?? 'http://localhost:3001')
+    const baseUrl = (this.configService.get<string>('API_URL') ?? 'http://localhost:3001')
+      .replace('localhost', '10.0.2.2')
+      .replace('127.0.0.1', '10.0.2.2')
 
     return {
       status: 'ready',

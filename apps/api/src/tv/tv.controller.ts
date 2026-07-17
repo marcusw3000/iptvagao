@@ -30,28 +30,28 @@ export class TvController {
   @UseGuards(DeviceAuthGuard)
   @Get('channels')
   channels(@Req() req: { device: AuthenticatedDevice }) {
-    return this.tvService.channelsForClient(req.device.clientId, req.device.deviceId)
+    return this.tvService.channelsForClient(req.device.clientId)
   }
 
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Post('heartbeat')
-  heartbeat(@Req() req: { device: AuthenticatedDevice; ip?: string }) {
-    return this.tvService.heartbeat(req.device.deviceId, req.ip)
+  heartbeat(@Req() req: { device: AuthenticatedDevice; ip?: string; headers: Record<string, string | undefined> }) {
+    return this.tvService.heartbeat(req.device.deviceId, req.ip, req.headers['user-agent'])
   }
 
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Post('favorites/:channelId')
   addFavorite(@Req() req: { device: AuthenticatedDevice }, @Param('channelId') channelId: string) {
-    return this.tvService.addFavorite(req.device.deviceId, channelId)
+    return this.tvService.addFavorite(req.device.clientId, channelId)
   }
 
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Delete('favorites/:channelId')
   removeFavorite(@Req() req: { device: AuthenticatedDevice }, @Param('channelId') channelId: string) {
-    return this.tvService.removeFavorite(req.device.deviceId, channelId)
+    return this.tvService.removeFavorite(req.device.clientId, channelId)
   }
 
   @Public()
@@ -96,11 +96,8 @@ export class TvController {
   @Public()
   @UseGuards(DeviceAuthGuard)
   @Get('torrent/prepare')
-  async prepareTorrent(@Query('source') source: string, @Req() req: any) {
-    const host = req.headers.host || 'localhost:3001'
-    const protocol = (req.headers['x-forwarded-proto'] as string) || 'http'
-    const reqBaseUrl = `${protocol}://${host}`
-    return this.torrentEngineService.prepareStream(source, reqBaseUrl)
+  async prepareTorrent(@Query('source') source: string) {
+    return this.torrentEngineService.prepareStream(source)
   }
 
   @Public()
@@ -110,7 +107,8 @@ export class TvController {
     const file = await this.torrentEngineService.getFile(id)
     reply.header('Content-Type', file.mimeType)
     reply.header('Cache-Control', 'no-store')
-    reply.header('Content-Disposition', `inline; filename="${file.fileName}"`)
+    const safeFilename = file.fileName.replace(/["\r\n]/g, '')
+    reply.header('Content-Disposition', `inline; filename="${safeFilename}"`)
     return reply.send(createReadStream(file.filePath))
   }
 
@@ -144,13 +142,6 @@ export class TvController {
   @UseGuards(DeviceAuthGuard)
   @Get('vod/streams/:id')
   async vodStreams(@Param('id') id: string, @Query('videoId') videoId?: string, @Query('type') type?: string) {
-    return { streams: await this.vodService.streamsDebug(id, videoId, type).then((result) => result.streams) }
-  }
-
-  @Public()
-  @UseGuards(DeviceAuthGuard)
-  @Get('vod/streams/:id/raw')
-  async vodStreamsRaw(@Param('id') id: string, @Query('videoId') videoId?: string, @Query('type') type?: string) {
-    return await this.vodService.streamsDebug(id, videoId, type)
+    return { streams: await this.vodService.streams(id, videoId, type) }
   }
 }

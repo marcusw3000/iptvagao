@@ -2,7 +2,11 @@ package com.iptvagao.tv.ui
 
 import android.view.KeyEvent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,6 +50,7 @@ import kotlinx.coroutines.delay
 fun PlayerScreen(channels: List<ChannelDto>, startIndex: Int, onExit: () -> Unit) {
     val context = LocalContext.current
     var index by remember { mutableIntStateOf(startIndex) }
+    var playbackAttempt by remember { mutableIntStateOf(0) }
     var showOverlay by remember { mutableStateOf(true) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
@@ -53,11 +59,19 @@ fun PlayerScreen(channels: List<ChannelDto>, startIndex: Int, onExit: () -> Unit
         ExoPlayer.Builder(context).build().apply { playWhenReady = true }
     }
 
+    fun retryCurrentChannel() {
+        playbackError = null
+        showOverlay = true
+        playbackAttempt += 1
+    }
+
     DisposableEffect(Unit) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = "Canal indisponível no momento"
+                playbackError = "Stream indisponivel no momento."
+                showOverlay = true
             }
+
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) playbackError = null
             }
@@ -69,7 +83,7 @@ fun PlayerScreen(channels: List<ChannelDto>, startIndex: Int, onExit: () -> Unit
         }
     }
 
-    LaunchedEffect(index) {
+    LaunchedEffect(index, playbackAttempt) {
         val channel = channels[index]
         playbackError = null
         player.stop()
@@ -78,7 +92,9 @@ fun PlayerScreen(channels: List<ChannelDto>, startIndex: Int, onExit: () -> Unit
         player.prepare()
         showOverlay = true
         delay(4000)
-        showOverlay = false
+        if (playbackError == null) {
+            showOverlay = false
+        }
     }
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -94,14 +110,20 @@ fun PlayerScreen(channels: List<ChannelDto>, startIndex: Int, onExit: () -> Unit
                 when (event.nativeKeyEvent.keyCode) {
                     KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> {
                         index = (index + 1) % channels.size
+                        playbackAttempt = 0
                         true
                     }
                     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> {
                         index = (index - 1 + channels.size) % channels.size
+                        playbackAttempt = 0
                         true
                     }
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                        showOverlay = !showOverlay
+                        if (playbackError != null) {
+                            retryCurrentChannel()
+                        } else {
+                            showOverlay = !showOverlay
+                        }
                         true
                     }
                     KeyEvent.KEYCODE_BACK -> {
@@ -124,31 +146,14 @@ fun PlayerScreen(channels: List<ChannelDto>, startIndex: Int, onExit: () -> Unit
         )
 
         playbackError?.let { message ->
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = IptvColors.Surface,
+            PlaybackErrorOverlay(
+                message = message,
+                onRetry = ::retryCurrentChannel,
+                onExit = onExit,
                 modifier = Modifier.align(Alignment.Center),
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 40.dp, vertical = 28.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        message,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = IptvColors.TextPrimary,
-                    )
-                    Text(
-                        "Use as setas para trocar de canal ou Voltar para a lista",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = IptvColors.Accent,
-                        modifier = Modifier.padding(top = 10.dp),
-                    )
-                }
-            }
+            )
         }
 
-        // Overlay broadcast: barra inferior com gradiente + info do canal
         if (showOverlay) {
             val channel = channels[index]
             Box(
@@ -196,5 +201,78 @@ fun PlayerScreen(channels: List<ChannelDto>, startIndex: Int, onExit: () -> Unit
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PlaybackErrorOverlay(
+    message: String,
+    onRetry: () -> Unit,
+    onExit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val retryFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        retryFocusRequester.requestFocus()
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = IptvColors.Surface,
+        modifier = modifier,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 40.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                message,
+                style = MaterialTheme.typography.headlineSmall,
+                color = IptvColors.TextPrimary,
+            )
+            Text(
+                "Tente novamente ou volte para a lista de canais.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = IptvColors.Accent,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            Row(
+                modifier = Modifier.padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OverlayActionButton(
+                    label = "Tentar novamente",
+                    onClick = onRetry,
+                    modifier = Modifier.focusRequester(retryFocusRequester),
+                )
+                OverlayActionButton(
+                    label = "Voltar para lista",
+                    onClick = onExit,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverlayActionButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+
+    Button(
+        onClick = onClick,
+        modifier = modifier.border(
+            width = if (focused) 2.dp else 0.dp,
+            color = if (focused) IptvColors.Accent else Color.Transparent,
+            shape = RoundedCornerShape(24.dp),
+        ),
+        interactionSource = interaction,
+    ) {
+        Text(label)
     }
 }

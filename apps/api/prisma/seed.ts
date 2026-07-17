@@ -6,11 +6,19 @@ const prisma = new PrismaClient()
 async function main() {
   const basicPlan = await prisma.plan.upsert({
     where: { type: 'basic' },
-    update: {},
+    update: {
+      name: 'BÃ¡sico',
+      price: 19,
+      maxDevices: 5,
+      storageGB: 10,
+      maxChannels: 20,
+      maxPlaylists: 5,
+      maxUsers: 2,
+    },
     create: {
       name: 'Básico',
       type: 'basic',
-      price: 99.9,
+      price: 19,
       maxDevices: 5,
       storageGB: 10,
       maxChannels: 20,
@@ -21,11 +29,19 @@ async function main() {
 
   const premiumPlan = await prisma.plan.upsert({
     where: { type: 'premium' },
-    update: {},
+    update: {
+      name: 'Premium',
+      price: 29,
+      maxDevices: 50,
+      storageGB: 100,
+      maxChannels: 200,
+      maxPlaylists: 50,
+      maxUsers: 10,
+    },
     create: {
       name: 'Premium',
       type: 'premium',
-      price: 199.9,
+      price: 29,
       maxDevices: 50,
       storageGB: 100,
       maxChannels: 200,

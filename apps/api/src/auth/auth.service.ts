@@ -3,7 +3,8 @@ import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcrypt'
 import { PrismaService } from '../prisma/prisma.service'
 import { LoginDto } from './dto/login.dto'
-import type { AuthTokens, JwtPayload } from '@iptvagao/shared'
+import type { AuthSession, AuthSessionUser, JwtPayload } from '@iptvagao/shared'
+import { AUTH_COOKIE_MAX_AGE } from './auth-cookie'
 
 @Injectable()
 export class AuthService {
@@ -12,7 +13,7 @@ export class AuthService {
     private readonly jwt: JwtService,
   ) {}
 
-  async login(dto: LoginDto): Promise<AuthTokens> {
+  async login(dto: LoginDto): Promise<{ accessToken: string; session: AuthSession }> {
     const user = await this.prisma.user.findUnique({
       where: { username: dto.username },
     })
@@ -37,12 +38,15 @@ export class AuthService {
 
     return {
       accessToken: this.jwt.sign(payload),
-      expiresIn: 7 * 24 * 60 * 60,
+      session: {
+        user: this.toSessionUser(user),
+        expiresIn: AUTH_COOKIE_MAX_AGE,
+      },
     }
   }
 
-  async validateUser(payload: JwtPayload) {
-    return this.prisma.user.findUnique({
+  async validateUser(payload: JwtPayload): Promise<AuthSessionUser | null> {
+    const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: {
         id: true,
@@ -57,5 +61,24 @@ export class AuthService {
         updatedAt: true,
       },
     })
+    return user ? this.toSessionUser(user) : null
+  }
+
+  private toSessionUser(user: {
+    id: string
+    username: string
+    email: string | null
+    role: string
+    clientId: string | null
+    resellerId: string | null
+  }): AuthSessionUser {
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      clientId: user.clientId,
+      resellerId: user.resellerId,
+    }
   }
 }

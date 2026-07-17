@@ -14,7 +14,7 @@ const mockSubscription = {
 const mockPayment = {
   id: 'pay-1',
   subscriptionId: 'sub-1',
-  amount: '99.90',
+  amount: '29.00',
   method: PaymentMethod.credit_card,
   status: PaymentStatus.pending,
   reference: null,
@@ -28,7 +28,7 @@ const mockPayment = {
 
 const confirmedPayment = { ...mockPayment, status: PaymentStatus.paid, paidAt: new Date() }
 
-const mockPlan = { id: 'plan-1', name: 'Premium', price: '99.90' }
+const mockPlan = { id: 'plan-1', name: 'Premium', price: '29.00' }
 const mockSubscriptionFull = {
   ...{ id: 'sub-1', clientId: 'client-1', status: SubscriptionStatus.past_due },
   plan: mockPlan,
@@ -91,7 +91,7 @@ describe('PaymentsService', () => {
   it('create returns payment with pending status', async () => {
       const result = await service.create({
         subscriptionId: 'sub-1',
-        amount: '99.90',
+        amount: '29.00',
         method: PaymentMethod.credit_card,
       })
     expect(result.id).toBe('pay-1')
@@ -102,7 +102,7 @@ describe('PaymentsService', () => {
     prisma.subscription.findUnique.mockResolvedValue(null)
     await expect(service.create({
       subscriptionId: 'bad',
-      amount: '99.90',
+      amount: '29.00',
       method: PaymentMethod.credit_card,
     })).rejects.toThrow(NotFoundException)
   })
@@ -202,7 +202,7 @@ describe('PaymentsService', () => {
     it('calls ensureProduct with price in centavos', async () => {
       await service.createCheckout('sub-1')
       expect(abacatepay.ensureProduct).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'sub-plan-1', priceInCentavos: 9990, cycle: 'MONTHLY' }),
+        expect.objectContaining({ id: 'sub-plan-1', priceInCentavos: 2900, cycle: 'MONTHLY' }),
       )
       expect(abacatepay.createSubscriptionCheckout).toHaveBeenCalledWith(
         expect.objectContaining({ planId: 'sub-plan-1', paymentId: 'pay-1' }),

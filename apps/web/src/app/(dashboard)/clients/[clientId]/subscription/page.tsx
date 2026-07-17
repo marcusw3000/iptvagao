@@ -574,7 +574,7 @@ export default function SubscriptionPage() {
                 <label className="block text-sm text-gray-300 mb-1">Valor (R$) *</label>
                 <input
                   {...paymentForm.register('amount')}
-                  placeholder="99.90"
+                  placeholder="19.00"
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500"
                 />
                 {paymentForm.formState.errors.amount && (
